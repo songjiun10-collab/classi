@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# 데이터·모델 산출물(저장소엔 디렉터리 구조만 유지)
+data/raw/*
+data/processed/*
+data/exports/*
+!data/**/.gitkeep
+models/*
+!models/.gitkeep
+
+# 로컬 비밀·세션
+*.session
+.env
