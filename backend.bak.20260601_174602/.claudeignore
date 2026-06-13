@@ -1,0 +1,10 @@
+node_modules/
+static/
+public/
+*.js
+*.css
+*.html
+.venv/
+venv/
+data/
+logs/
