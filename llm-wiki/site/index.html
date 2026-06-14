@@ -13,7 +13,6 @@
     --line:#1b2430; --line-soft:#141b25;
     --text:#c4ccd6; --bright:#eaf1f8; --muted:#5d6b7c; --dim:#3c4856;
     --accent:#4ad6ee; --accent-dim:#1d6f80; --accent-bg:rgba(74,214,238,.08);
-    --add:#3ad17f; --del:#ff5f6e; --warn:#f5b942;
     --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Consolas,monospace;
     --ui:"Inter",-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;
   }
@@ -95,8 +94,10 @@
   #content blockquote{border-left:2px solid var(--accent-dim);margin:1.2em 0;padding:.4em 1em;
     color:var(--muted);background:var(--accent-bg)}
   #content hr{border:none;border-top:1px solid var(--line);margin:2em 0}
-  /* diff 색상 */
-  .diff-add{color:var(--add)} .diff-del{color:var(--del)} .diff-meta{color:var(--dim)}
+  /* diff — 무채색 + 한색(시안)만: 추가=액센트, 삭제=무채색 */
+  .diff-add{color:var(--accent)}
+  .diff-del{color:var(--muted);opacity:.65;text-decoration:line-through;text-decoration-color:var(--dim)}
+  .diff-meta{color:var(--dim)}
   .wikilink{color:var(--accent);cursor:pointer;border-bottom:1px dashed var(--accent-dim)}
   .wikilink:hover{border-bottom-style:solid}
   .empty{color:var(--dim);font-family:var(--mono);text-align:center;margin-top:90px;letter-spacing:.08em}
@@ -156,7 +157,7 @@ function resolveWikilinks(md){
       || n.path.replace(/\.md$/,'').endsWith('/'+t) || n.path.replace(/\.md$/,'') === t);
     const label = (alias || t).trim();
     if(note) return `<span class="wikilink" data-path="${note.path}">${label}</span>`;
-    return `<span class="wikilink" style="color:var(--del);border-color:var(--del)">${label}</span>`;
+    return `<span class="wikilink" style="color:var(--dim);border-color:var(--dim);font-style:italic">${label}</span>`;
   });
 }
 
