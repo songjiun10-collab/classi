@@ -62,10 +62,24 @@
 
   body{overflow:hidden}
   #space{position:fixed;inset:54px 0 0 0;overflow:hidden;
-    background:radial-gradient(circle at 50% 42%,#0d0d0d,#050505 55%,#000 100%)}
+    background:radial-gradient(circle at 50% 40%,#141a30,#0a0e1c 52%,#03040c 100%)}
+  /* 은하수 성운 띠 (코스믹 컬러) */
+  #nebula{position:absolute;inset:-12%;pointer-events:none;opacity:.8;filter:blur(8px);
+    background:
+      radial-gradient(40% 24% at 64% 28%,rgba(120,90,220,.20),transparent 70%),
+      radial-gradient(46% 26% at 32% 66%,rgba(40,150,200,.16),transparent 72%),
+      radial-gradient(30% 20% at 50% 50%,rgba(200,80,170,.10),transparent 70%),
+      linear-gradient(118deg,transparent 40%,rgba(150,170,255,.06) 50%,transparent 62%)}
+  /* 유성 */
+  .meteor{position:absolute;width:130px;height:2px;border-radius:2px;
+    background:linear-gradient(90deg,#cfe6ff,rgba(207,230,255,0));
+    filter:drop-shadow(0 0 5px rgba(180,210,255,.6));pointer-events:none;
+    animation:shoot linear forwards}
+  @keyframes shoot{0%{opacity:0;transform:rotate(35deg) translateX(0)}
+    12%{opacity:.9}100%{opacity:0;transform:rotate(35deg) translateX(72vw)}}
   /* 밤하늘 스타필드 */
   #stars{position:absolute;inset:0;pointer-events:none}
-  .star{position:absolute;border-radius:50%;background:#fff;opacity:var(--o,.6);
+  .star{position:absolute;border-radius:50%;background:var(--c,#fff);opacity:var(--o,.6);
     animation:twinkle linear infinite}
   @keyframes twinkle{0%,100%{opacity:calc(var(--o,.6) * .28)}50%{opacity:var(--o,.6)}}
   #galaxy{position:absolute;inset:0}
@@ -76,16 +90,16 @@
     cursor:pointer;z-index:5;display:flex;align-items:center;justify-content:center;
     animation:sunpulse 6s ease-in-out infinite}
   #sun::before{content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-    width:340%;height:340%;border-radius:50%;pointer-events:none;
-    background:radial-gradient(circle,rgba(255,255,255,.16),rgba(255,255,255,0) 65%)}
+    width:360%;height:360%;border-radius:50%;pointer-events:none;
+    background:radial-gradient(circle,rgba(255,246,224,.26),rgba(180,205,255,.12) 42%,transparent 66%)}
   #sun::after{content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
     width:540%;height:540%;pointer-events:none;
     background:linear-gradient(0deg,transparent 47%,rgba(255,255,255,.13) 50%,transparent 53%),
                linear-gradient(90deg,transparent 47%,rgba(255,255,255,.13) 50%,transparent 53%);
     -webkit-mask:radial-gradient(circle,#000 6%,transparent 58%);
             mask:radial-gradient(circle,#000 6%,transparent 58%)}
-  @keyframes sunpulse{0%,100%{box-shadow:0 0 44px 10px rgba(255,255,255,.20)}
-    50%{box-shadow:0 0 68px 16px rgba(255,255,255,.34)}}
+  @keyframes sunpulse{0%,100%{box-shadow:0 0 46px 10px rgba(255,240,210,.22)}
+    50%{box-shadow:0 0 72px 18px rgba(255,236,200,.38)}}
   #sun .core{position:relative;z-index:2;font-family:var(--mono);font-size:8.5px;letter-spacing:.16em;
     color:#000;text-transform:uppercase;text-align:center;line-height:1.4}
   .orbit{position:absolute;left:50%;top:50%;border:1px solid var(--line-soft);border-radius:50%;
@@ -96,8 +110,11 @@
     animation:spin var(--dur) linear infinite;pointer-events:none}
   .planet{position:absolute;top:0;left:50%;transform:translate(-50%,-50%);
     display:flex;align-items:center;gap:9px;cursor:pointer;pointer-events:auto;white-space:nowrap}
-  .planet .dot{width:12px;height:12px;border-radius:50%;background:#fff;flex:none;
+  .planet .dot{position:relative;width:12px;height:12px;border-radius:50%;background:#fff;flex:none;
     box-shadow:0 0 10px 1px rgba(255,255,255,.45);transition:box-shadow .15s}
+  .planet .dot::before{content:"";position:absolute;right:50%;top:50%;transform:translateY(-50%);
+    width:54px;height:2px;pointer-events:none;
+    background:linear-gradient(to left,rgba(255,255,255,.5),rgba(255,255,255,0))}
   .planet .label{font-family:var(--mono);font-size:11px;letter-spacing:.03em;color:var(--muted);
     animation:spin var(--dur) linear infinite reverse}
   .planet:hover .dot{box-shadow:0 0 16px 4px #fff}
@@ -130,6 +147,7 @@
       <span class="sep full">—</span><span class="full">Orbit</span></div>
   </header>
   <div id="space">
+    <div id="nebula"></div>
     <div id="stars"></div>
     <div id="galaxy"></div>
     <div id="sun" title="LLM Wiki"><div class="core">LLM<br>WIKI</div></div>
@@ -174,14 +192,17 @@ const galaxy = document.getElementById('galaxy');
 (function(){
   const area = window.innerWidth * window.innerHeight;
   const N = Math.max(90, Math.min(280, Math.round(area / 6200)));
+  // 대부분 흰색, 일부 청·금·보라빛 별
+  const PALETTE = ['#ffffff','#ffffff','#ffffff','#cfe0ff','#bcd2ff','#ffe6bf','#e6ccff','#bff2ff'];
   let html = '';
   for(let i=0;i<N;i++){
     const r = Math.random();
     const sz = (r<0.82 ? 1 : (r<0.95 ? 1.7 : 2.6)).toFixed(1);
     const o  = (0.2 + Math.random()*0.65).toFixed(2);
+    const c  = PALETTE[(Math.random()*PALETTE.length)|0];
     html += `<span class="star" style="width:${sz}px;height:${sz}px;`
           + `left:${(Math.random()*100).toFixed(2)}%;top:${(Math.random()*100).toFixed(2)}%;`
-          + `--o:${o};animation-duration:${(2.5+Math.random()*5).toFixed(1)}s;`
+          + `--o:${o};--c:${c};animation-duration:${(2.5+Math.random()*5).toFixed(1)}s;`
           + `animation-delay:${(-Math.random()*6).toFixed(1)}s"></span>`;
   }
   document.getElementById('stars').innerHTML = html;
@@ -224,6 +245,29 @@ document.getElementById('sun').addEventListener('click', () => {
   const r = NOTES.find(n => /readme/i.test(n.path)) || NOTES[0];
   if(r) openNote(r.path);
 });
+
+// 마우스 패럴랙스
+const space = document.getElementById('space');
+const starsEl = document.getElementById('stars');
+const nebulaEl = document.getElementById('nebula');
+document.addEventListener('mousemove', e => {
+  const x = e.clientX / window.innerWidth - .5;
+  const y = e.clientY / window.innerHeight - .5;
+  starsEl.style.transform  = `translate(${x*-14}px,${y*-14}px)`;
+  nebulaEl.style.transform = `translate(${x*-26}px,${y*-26}px)`;
+});
+// 가끔 지나가는 유성
+function meteor(){
+  const m = document.createElement('div');
+  m.className = 'meteor';
+  m.style.left = (Math.random()*window.innerWidth*0.7) + 'px';
+  m.style.top  = (Math.random()*window.innerHeight*0.35 - 30) + 'px';
+  const dur = 0.7 + Math.random()*0.6;
+  m.style.animationDuration = dur + 's';
+  space.appendChild(m);
+  setTimeout(() => m.remove(), dur*1000 + 150);
+}
+setInterval(() => { if(Math.random() < 0.55) meteor(); }, 3600);
 </script>
 </body>
 </html>
