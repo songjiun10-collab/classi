@@ -61,15 +61,33 @@
 
 
   body{overflow:hidden}
-  #space{position:fixed;inset:54px 0 0 0;overflow:hidden;background:radial-gradient(circle at 50% 45%,#0a0a0a,#000 70%)}
+  #space{position:fixed;inset:54px 0 0 0;overflow:hidden;
+    background:radial-gradient(circle at 50% 42%,#0d0d0d,#050505 55%,#000 100%)}
+  /* 밤하늘 스타필드 */
+  #stars{position:absolute;inset:0;pointer-events:none}
+  .star{position:absolute;border-radius:50%;background:#fff;opacity:var(--o,.6);
+    animation:twinkle linear infinite}
+  @keyframes twinkle{0%,100%{opacity:calc(var(--o,.6) * .28)}50%{opacity:var(--o,.6)}}
   #galaxy{position:absolute;inset:0}
+  /* 중앙 별(태양) — 코로나 + 십자 광채 + 펄스 */
   #sun{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-    width:88px;height:88px;border-radius:50%;
-    background:radial-gradient(circle at 50% 40%,#fff,#cfcfcf 55%,#666);
-    box-shadow:0 0 46px 10px rgba(255,255,255,.22);cursor:pointer;z-index:5;
-    display:flex;align-items:center;justify-content:center}
-  #sun .core{font-family:var(--mono);font-size:8.5px;letter-spacing:.16em;color:#000;
-    text-transform:uppercase;text-align:center;line-height:1.4}
+    width:84px;height:84px;border-radius:50%;
+    background:radial-gradient(circle at 50% 40%,#fff,#dcdcdc 50%,#777);
+    cursor:pointer;z-index:5;display:flex;align-items:center;justify-content:center;
+    animation:sunpulse 6s ease-in-out infinite}
+  #sun::before{content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:340%;height:340%;border-radius:50%;pointer-events:none;
+    background:radial-gradient(circle,rgba(255,255,255,.16),rgba(255,255,255,0) 65%)}
+  #sun::after{content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:540%;height:540%;pointer-events:none;
+    background:linear-gradient(0deg,transparent 47%,rgba(255,255,255,.13) 50%,transparent 53%),
+               linear-gradient(90deg,transparent 47%,rgba(255,255,255,.13) 50%,transparent 53%);
+    -webkit-mask:radial-gradient(circle,#000 6%,transparent 58%);
+            mask:radial-gradient(circle,#000 6%,transparent 58%)}
+  @keyframes sunpulse{0%,100%{box-shadow:0 0 44px 10px rgba(255,255,255,.20)}
+    50%{box-shadow:0 0 68px 16px rgba(255,255,255,.34)}}
+  #sun .core{position:relative;z-index:2;font-family:var(--mono);font-size:8.5px;letter-spacing:.16em;
+    color:#000;text-transform:uppercase;text-align:center;line-height:1.4}
   .orbit{position:absolute;left:50%;top:50%;border:1px solid var(--line-soft);border-radius:50%;
     width:var(--d);height:var(--d);margin-left:calc(var(--d) / -2);margin-top:calc(var(--d) / -2);
     pointer-events:none}
@@ -112,6 +130,7 @@
       <span class="sep full">—</span><span class="full">Orbit</span></div>
   </header>
   <div id="space">
+    <div id="stars"></div>
     <div id="galaxy"></div>
     <div id="sun" title="LLM Wiki"><div class="core">LLM<br>WIKI</div></div>
   </div>
@@ -151,6 +170,22 @@ function resolveWikilinks(md){
 function renderMd(content){ return colorizeDiff(marked.parse(resolveWikilinks(content))); }
 
 const galaxy = document.getElementById('galaxy');
+// 밤하늘 별 생성(뷰포트 면적에 비례)
+(function(){
+  const area = window.innerWidth * window.innerHeight;
+  const N = Math.max(90, Math.min(280, Math.round(area / 6200)));
+  let html = '';
+  for(let i=0;i<N;i++){
+    const r = Math.random();
+    const sz = (r<0.82 ? 1 : (r<0.95 ? 1.7 : 2.6)).toFixed(1);
+    const o  = (0.2 + Math.random()*0.65).toFixed(2);
+    html += `<span class="star" style="width:${sz}px;height:${sz}px;`
+          + `left:${(Math.random()*100).toFixed(2)}%;top:${(Math.random()*100).toFixed(2)}%;`
+          + `--o:${o};animation-duration:${(2.5+Math.random()*5).toFixed(1)}s;`
+          + `animation-delay:${(-Math.random()*6).toFixed(1)}s"></span>`;
+  }
+  document.getElementById('stars').innerHTML = html;
+})();
 const panel = document.getElementById('panel');
 const panelBody = document.getElementById('panelbody');
 const ppath = document.getElementById('ppath');
