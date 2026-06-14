@@ -1,0 +1,39 @@
+name: Deploy llm-wiki to Pages
+
+# main에 llm-wiki 변경이 푸시되면 사이트를 빌드해 GitHub Pages로 배포.
+# (수동 실행도 가능: Actions 탭 → Run workflow)
+on:
+  push:
+    branches: [main]
+    paths: ['llm-wiki/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 동시 배포 1건으로 제한(진행 중이면 큐잉)
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Build site
+        run: python3 llm-wiki/build_site.py
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: llm-wiki/site
+      - id: deploy
+        uses: actions/deploy-pages@v4

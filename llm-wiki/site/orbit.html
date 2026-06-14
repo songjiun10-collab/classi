@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM WIKI — ORBIT</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+
+  :root{
+    --bg:#000000; --line:#222222; --line-soft:#151515;
+    --text:#d4d4d4; --bright:#ffffff; --muted:#8a8a8a; --dim:#555555;
+    --hover:#0c0c0c; --active:#161616;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Consolas,monospace;
+    --ui:"Inter",-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;font-family:var(--ui);color:var(--text);background:var(--bg);
+       -webkit-font-smoothing:antialiased}
+  #topbar{height:54px;min-height:54px;display:flex;align-items:center;justify-content:space-between;
+    padding:0 22px;background:#000;border-bottom:1px solid var(--line)}
+  #topbar .left{display:flex;align-items:center;gap:16px}
+  #topbar .brand{font-weight:600;font-size:15px;letter-spacing:.34em;color:var(--bright);
+    text-transform:uppercase;padding-left:.34em}
+  #topbar .meta{display:flex;align-items:center;gap:12px;
+    font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  #topbar .meta .sep{color:var(--dim)}
+  #topbar .navlink{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--dim)}
+  #topbar .navlink:hover{color:var(--bright);border-bottom-color:var(--bright)}
+  .md{line-height:1.78;font-size:15.5px}
+  .md h1,.md h2,.md h3{color:var(--bright);font-weight:600;line-height:1.25;
+    margin-top:1.9em;padding-bottom:.4em;border-bottom:1px solid var(--line);letter-spacing:-.01em}
+  .md h1{font-size:2em;font-weight:700} .md h2{font-size:1.45em}
+  .md h3{font-size:1.18em;border-bottom-color:var(--line-soft)}
+  .md p{color:var(--text)}
+  .md a{color:var(--bright);text-decoration:none;border-bottom:1px solid var(--dim)}
+  .md a:hover{border-bottom-color:var(--bright)}
+  .md code{font-family:var(--mono);background:var(--line-soft);border:1px solid var(--line);
+    padding:.1em .42em;font-size:.84em;color:var(--bright)}
+  .md pre{background:#080808;border:1px solid var(--line);border-left:2px solid var(--bright);
+    padding:16px 18px;overflow-x:auto}
+  .md pre code{background:none;border:none;padding:0;color:var(--text);font-size:.84em;line-height:1.6}
+  .md table{border-collapse:collapse;width:100%;margin:1.2em 0;font-size:.92em}
+  .md th,.md td{border:1px solid var(--line);padding:9px 13px;text-align:left}
+  .md th{background:var(--line-soft);font-family:var(--mono);font-size:.82em;
+    text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:500}
+  .md blockquote{border-left:2px solid var(--bright);margin:1.3em 0;padding:.5em 1.1em;
+    color:var(--muted);background:#080808}
+  .md hr{border:none;border-top:1px solid var(--line);margin:2.4em 0}
+  .diff-add{color:var(--bright)}
+  .diff-del{color:var(--dim);text-decoration:line-through;text-decoration-color:var(--line)}
+  .diff-meta{color:var(--dim)}
+  .wikilink{color:var(--bright);cursor:pointer;border-bottom:1px dashed var(--dim)}
+  .wikilink:hover{border-bottom-style:solid;border-bottom-color:var(--bright)}
+  ::-webkit-scrollbar{width:12px;height:12px}
+  ::-webkit-scrollbar-thumb{background:var(--line);border:4px solid #000;background-clip:content-box}
+  ::-webkit-scrollbar-thumb:hover{background:var(--dim);background-clip:content-box}
+
+
+  body{overflow:hidden}
+  #space{position:fixed;inset:54px 0 0 0;overflow:hidden;
+    background:radial-gradient(circle at 50% 40%,#141a30,#0a0e1c 52%,#03040c 100%)}
+  /* 은하수 성운 띠 (코스믹 컬러) */
+  #nebula{position:absolute;inset:-12%;pointer-events:none;opacity:.8;filter:blur(8px);
+    background:
+      radial-gradient(40% 24% at 64% 28%,rgba(120,90,220,.20),transparent 70%),
+      radial-gradient(46% 26% at 32% 66%,rgba(40,150,200,.16),transparent 72%),
+      radial-gradient(30% 20% at 50% 50%,rgba(200,80,170,.10),transparent 70%),
+      linear-gradient(118deg,transparent 40%,rgba(150,170,255,.06) 50%,transparent 62%)}
+  /* 유성 */
+  .meteor{position:absolute;width:130px;height:2px;border-radius:2px;
+    background:linear-gradient(90deg,#cfe6ff,rgba(207,230,255,0));
+    filter:drop-shadow(0 0 5px rgba(180,210,255,.6));pointer-events:none;
+    animation:shoot linear forwards}
+  @keyframes shoot{0%{opacity:0;transform:rotate(35deg) translateX(0)}
+    12%{opacity:.9}100%{opacity:0;transform:rotate(35deg) translateX(72vw)}}
+  /* 밤하늘 스타필드 */
+  #stars{position:absolute;inset:0;pointer-events:none}
+  .star{position:absolute;border-radius:50%;background:var(--c,#fff);opacity:var(--o,.6);
+    animation:twinkle linear infinite}
+  @keyframes twinkle{0%,100%{opacity:calc(var(--o,.6) * .28)}50%{opacity:var(--o,.6)}}
+  #galaxy{position:absolute;inset:0}
+  /* 중앙 별(태양) — 코로나 + 십자 광채 + 펄스 */
+  #sun{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:84px;height:84px;border-radius:50%;
+    background:radial-gradient(circle at 50% 40%,#fff,#dcdcdc 50%,#777);
+    cursor:pointer;z-index:5;display:flex;align-items:center;justify-content:center;
+    animation:sunpulse 6s ease-in-out infinite}
+  #sun::before{content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:360%;height:360%;border-radius:50%;pointer-events:none;
+    background:radial-gradient(circle,rgba(255,246,224,.26),rgba(180,205,255,.12) 42%,transparent 66%)}
+  #sun::after{content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:540%;height:540%;pointer-events:none;
+    background:linear-gradient(0deg,transparent 47%,rgba(255,255,255,.13) 50%,transparent 53%),
+               linear-gradient(90deg,transparent 47%,rgba(255,255,255,.13) 50%,transparent 53%);
+    -webkit-mask:radial-gradient(circle,#000 6%,transparent 58%);
+            mask:radial-gradient(circle,#000 6%,transparent 58%)}
+  @keyframes sunpulse{0%,100%{box-shadow:0 0 46px 10px rgba(255,240,210,.22)}
+    50%{box-shadow:0 0 72px 18px rgba(255,236,200,.38)}}
+  #sun .core{position:relative;z-index:2;font-family:var(--mono);font-size:8.5px;letter-spacing:.16em;
+    color:#000;text-transform:uppercase;text-align:center;line-height:1.4}
+  .orbit{position:absolute;left:50%;top:50%;border:1px solid var(--line-soft);border-radius:50%;
+    width:var(--d);height:var(--d);margin-left:calc(var(--d) / -2);margin-top:calc(var(--d) / -2);
+    pointer-events:none}
+  .arm{position:absolute;left:50%;top:50%;width:var(--d);height:var(--d);
+    margin-left:calc(var(--d) / -2);margin-top:calc(var(--d) / -2);
+    animation:spin var(--dur) linear infinite;pointer-events:none}
+  .planet{position:absolute;top:0;left:50%;transform:translate(-50%,-50%);
+    display:flex;align-items:center;gap:9px;cursor:pointer;pointer-events:auto;white-space:nowrap}
+  .planet .dot{position:relative;width:12px;height:12px;border-radius:50%;background:#fff;flex:none;
+    box-shadow:0 0 10px 1px rgba(255,255,255,.45);transition:box-shadow .15s}
+  .planet .dot::before{content:"";position:absolute;right:50%;top:50%;transform:translateY(-50%);
+    width:54px;height:2px;pointer-events:none;
+    background:linear-gradient(to left,rgba(255,255,255,.5),rgba(255,255,255,0))}
+  .planet .label{font-family:var(--mono);font-size:11px;letter-spacing:.03em;color:var(--muted);
+    animation:spin var(--dur) linear infinite reverse}
+  .planet:hover .dot{box-shadow:0 0 16px 4px #fff}
+  .planet:hover .label{color:#fff}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #hint{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+  /* 디테일 패널 */
+  #panel{position:fixed;top:54px;right:0;bottom:0;width:min(520px,94vw);background:#000;
+    border-left:1px solid var(--line);transform:translateX(100%);transition:transform .25s ease;
+    z-index:40;display:flex;flex-direction:column}
+  #panel.open{transform:none}
+  #panelhead{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 18px;
+    border-bottom:1px solid var(--line);font-family:var(--mono);font-size:11px;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--muted)}
+  #panelhead .p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #pclose{flex:none;background:none;border:1px solid var(--line);color:var(--text);cursor:pointer;
+    width:30px;height:30px;font-size:15px;line-height:1}
+  #pclose:hover{border-color:var(--bright);color:var(--bright)}
+  #panelbody{overflow-y:auto;padding:26px 26px 90px}
+  @media(max-width:520px){ #topbar .meta .full{display:none} }
+
+</style>
+</head>
+
+<body>
+  <header id="topbar">
+    <div class="left"><div class="brand">LLM Wiki</div></div>
+    <div class="meta"><a class="navlink" href="index.html">Index view</a>
+      <span class="sep full">—</span><span class="full">Orbit</span></div>
+  </header>
+  <div id="space">
+    <div id="nebula"></div>
+    <div id="stars"></div>
+    <div id="galaxy"></div>
+    <div id="sun" title="LLM Wiki"><div class="core">LLM<br>WIKI</div></div>
+  </div>
+  <div id="hint">Click a planet</div>
+  <aside id="panel">
+    <div id="panelhead"><span class="p" id="ppath">—</span>
+      <button id="pclose" type="button" aria-label="Close">✕</button></div>
+    <div id="panelbody" class="md"></div>
+  </aside>
+<script>
+const NOTES = [{"path": "README.md", "title": "LLM Wiki 📓", "content": "# LLM Wiki 📓\n\n이 폴더는 **LLM(Claude)이 수정한 변경 이력**을 누적하는 Obsidian 호환 위키입니다.\n\n- 이 디렉터리를 **Obsidian Vault로 열거나** 기존 Vault에 동기화해서 보세요.\n- 규칙은 [`CLAUDE.md`](../CLAUDE.md)의 작업 원칙 **6. LLM Wiki 기록**을 따릅니다.\n\n## 기록 규칙\n\n파일을 수정할 때마다 변경 내용을 기록합니다. 항목:\n\n- **날짜·시각**\n- **수정한 파일** 경로\n- **변경 요약** (왜·무엇을)\n- **전체 diff** (`diff` 코드블록)\n\n## 구조\n\n- `README.md` — 이 안내(Vault 인덱스)\n- `changes/` — 수정 1건당 노트 하나(`YYYY-MM-DD-<요약>.md`)\n- `build_site.py` — 노트를 Obsidian 스타일 웹사이트로 빌드\n- `site/index.html` — 생성된 단일 페이지 사이트\n\n## 웹으로 보기\n\n```bash\npython3 llm-wiki/build_site.py      # 노트를 스캔해 site/index.html 생성\n```\n\n생성된 `llm-wiki/site/index.html`을 브라우저로 열면 됩니다(파일 더블클릭 또는 호스팅).\n다크 테마·사이드바·검색·`[[위키링크]]`·diff 색상으로 Obsidian처럼 표현됩니다.\n\n> 원격 환경에서는 사용자 PC의 로컬 Obsidian Vault에 직접 쓸 수 없어, 저장소 안 `llm-wiki/`에 남깁니다.\n"}, {"path": "changes/2026-06-14-llm-wiki-규칙-도입.md", "title": "2026-06-14 · LLM Wiki 규칙 도입", "content": "# 2026-06-14 · LLM Wiki 규칙 도입\n\n## 수정한 파일\n- `CLAUDE.md`\n- `llm-wiki/README.md` (신규)\n- `llm-wiki/changes/2026-06-14-llm-wiki-규칙-도입.md` (이 노트)\n\n## 변경 요약\n- 작업 원칙 **5. 오류 기록**에 \"해결책까지 반드시 채운다\"를 명시.\n- 작업 원칙 **6. LLM Wiki 기록**을 신설: 파일 수정 시 변경 내용(전체 diff 포함)을 `llm-wiki/`에 기록.\n- `CLAUDE.md` 하단에 \"LLM Wiki (변경 이력)\" 섹션 추가.\n- `llm-wiki/` 폴더 생성(Obsidian Vault 인덱스 + 변경 노트).\n\n## 전체 diff\n\n```diff\ndiff --git a/CLAUDE.md b/CLAUDE.md\n@@ -42,8 +42,14 @@\n ### 5. 오류 기록 (Error Logging) — **필수**\n - **코드를 작성·실행하다 오류가 발생하면, 무조건 아래 [오류 기록 로그](#오류-기록-로그)에 한 줄 추가한다.**\n - 기록 항목: 날짜, 발생 위치(파일/명령), 증상, 원인, 해결 방법.\n+- **오류는 해결책(해결 방법)까지 반드시 채운다.** 해결 칸을 비워두지 말고, 어떻게 고쳤는지/우회했는지 남긴다.\n - 같은 실수를 반복하지 않기 위한 장치이므로, 사소해 보여도 빠짐없이 남긴다.\n \n+### 6. LLM Wiki 기록 (변경 이력) — **필수**\n+- **파일을 수정하면, 그 수정 내용을 [`llm-wiki/`](./llm-wiki/)에 기록한다.** (Obsidian Vault로 열 수 있는 마크다운 노트 모음.)\n+- 기록 항목: 날짜, 수정한 파일, 변경 요약, 그리고 **전체 diff**.\n+- 원격 환경에서는 사용자 PC의 로컬 Obsidian Vault에 직접 쓸 수 없으므로, 저장소 안의 `llm-wiki/`에 남기고 Obsidian으로 열거나 동기화한다.\n+\n ---\n \n ## 아키텍처 메모\n@@ -105,3 +111,14 @@\n | _예시_ | `core/classifier_engine.py` | `ModuleNotFoundError: paddleocr` | OCR 의존성 미설치 | `pip install paddleocr` 또는 `CLASSI_OCR=tesseract`로 폴백 |\n+\n+---\n+\n+## LLM Wiki (변경 이력)\n+\n+> 작업 원칙 **6. LLM Wiki 기록**에 따라, 파일을 수정할 때마다 변경 내용을 [`llm-wiki/`](./llm-wiki/)에 남깁니다.\n+\n+- **위치**: 저장소 내 `llm-wiki/` 폴더(Obsidian Vault로 열거나 동기화).\n+- **형식**: 수정 1건당 노트 1개(또는 누적 로그)에 다음을 적는다 —\n+  - 날짜·시각, 수정한 파일 경로, 변경 요약, **전체 diff**(```diff 코드블록).\n+- **이유**: 원격(클라우드) 컨테이너에서는 로컬 Obsidian Vault에 직접 쓸 수 없어, 저장소 안에 두고 Obsidian으로 연다.\n```\n"}];
+const byPath = Object.fromEntries(NOTES.map(n => [n.path, n]));
+
+function colorizeDiff(html){
+  return html.replace(/<pre><code class="language-diff">([\s\S]*?)<\/code><\/pre>/g,
+    (_, code) => {
+      const lines = code.split('\n').map(l => {
+        if(/^\+(?!\+\+)/.test(l)) return '<span class="diff-add">'+l+'</span>';
+        if(/^-(?!--)/.test(l))    return '<span class="diff-del">'+l+'</span>';
+        if(/^(@@|diff |index |---|\+\+\+|new file|deleted)/.test(l))
+          return '<span class="diff-meta">'+l+'</span>';
+        return l;
+      });
+      return '<pre><code class="language-diff">'+lines.join('\n')+'</code></pre>';
+    });
+}
+function resolveWikilinks(md){
+  return md.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, target, alias) => {
+    const t = target.trim();
+    const note = NOTES.find(n => n.title === t || n.path === t
+      || n.path.replace(/\.md$/,'').endsWith('/'+t) || n.path.replace(/\.md$/,'') === t);
+    const label = (alias || t).trim();
+    if(note) return `<span class="wikilink" data-path="${note.path}">${label}</span>`;
+    return `<span class="wikilink" style="color:var(--dim);border-color:var(--dim);font-style:italic">${label}</span>`;
+  });
+}
+function renderMd(content){ return colorizeDiff(marked.parse(resolveWikilinks(content))); }
+
+const galaxy = document.getElementById('galaxy');
+// 밤하늘 별 생성(뷰포트 면적에 비례)
+(function(){
+  const area = window.innerWidth * window.innerHeight;
+  const N = Math.max(90, Math.min(280, Math.round(area / 6200)));
+  // 대부분 흰색, 일부 청·금·보라빛 별
+  const PALETTE = ['#ffffff','#ffffff','#ffffff','#cfe0ff','#bcd2ff','#ffe6bf','#e6ccff','#bff2ff'];
+  let html = '';
+  for(let i=0;i<N;i++){
+    const r = Math.random();
+    const sz = (r<0.82 ? 1 : (r<0.95 ? 1.7 : 2.6)).toFixed(1);
+    const o  = (0.2 + Math.random()*0.65).toFixed(2);
+    const c  = PALETTE[(Math.random()*PALETTE.length)|0];
+    html += `<span class="star" style="width:${sz}px;height:${sz}px;`
+          + `left:${(Math.random()*100).toFixed(2)}%;top:${(Math.random()*100).toFixed(2)}%;`
+          + `--o:${o};--c:${c};animation-duration:${(2.5+Math.random()*5).toFixed(1)}s;`
+          + `animation-delay:${(-Math.random()*6).toFixed(1)}s"></span>`;
+  }
+  document.getElementById('stars').innerHTML = html;
+})();
+const panel = document.getElementById('panel');
+const panelBody = document.getElementById('panelbody');
+const ppath = document.getElementById('ppath');
+
+NOTES.forEach((n, i) => {
+  const d = 30 + i * 16;            // vmin 지름(궤도 반경)
+  const dur = 28 + i * 11;          // s 공전주기
+  const delay = -(i * 6.5);         // s 시작 위상 분산
+  const orbit = document.createElement('div');
+  orbit.className = 'orbit'; orbit.style.setProperty('--d', d + 'vmin');
+  const arm = document.createElement('div');
+  arm.className = 'arm';
+  arm.style.setProperty('--d', d + 'vmin'); arm.style.setProperty('--dur', dur + 's');
+  arm.style.animationDelay = delay + 's';
+  const planet = document.createElement('div');
+  planet.className = 'planet'; planet.dataset.path = n.path;
+  const dot = document.createElement('span'); dot.className = 'dot';
+  const label = document.createElement('span'); label.className = 'label'; label.textContent = n.title;
+  label.style.setProperty('--dur', dur + 's'); label.style.animationDelay = delay + 's';
+  planet.append(dot, label); arm.append(planet);
+  galaxy.append(orbit, arm);
+  planet.addEventListener('click', () => openNote(n.path));
+});
+
+function openNote(path){
+  const n = byPath[path]; if(!n) return;
+  panelBody.innerHTML = renderMd(n.content);
+  ppath.textContent = path;
+  panel.classList.add('open');
+  panelBody.scrollTop = 0;
+  panelBody.querySelectorAll('.wikilink[data-path]').forEach(el =>
+    el.onclick = () => openNote(el.dataset.path));
+}
+document.getElementById('pclose').addEventListener('click', () => panel.classList.remove('open'));
+document.getElementById('sun').addEventListener('click', () => {
+  const r = NOTES.find(n => /readme/i.test(n.path)) || NOTES[0];
+  if(r) openNote(r.path);
+});
+
+// 마우스 패럴랙스
+const space = document.getElementById('space');
+const starsEl = document.getElementById('stars');
+const nebulaEl = document.getElementById('nebula');
+document.addEventListener('mousemove', e => {
+  const x = e.clientX / window.innerWidth - .5;
+  const y = e.clientY / window.innerHeight - .5;
+  starsEl.style.transform  = `translate(${x*-14}px,${y*-14}px)`;
+  nebulaEl.style.transform = `translate(${x*-26}px,${y*-26}px)`;
+});
+// 가끔 지나가는 유성
+function meteor(){
+  const m = document.createElement('div');
+  m.className = 'meteor';
+  m.style.left = (Math.random()*window.innerWidth*0.7) + 'px';
+  m.style.top  = (Math.random()*window.innerHeight*0.35 - 30) + 'px';
+  const dur = 0.7 + Math.random()*0.6;
+  m.style.animationDuration = dur + 's';
+  space.appendChild(m);
+  setTimeout(() => m.remove(), dur*1000 + 150);
+}
+setInterval(() => { if(Math.random() < 0.55) meteor(); }, 3600);
+</script>
+</body>
+</html>

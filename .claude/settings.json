@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '\"| \" + (now|strftime(\"%Y-%m-%d %H:%M\")) + \" | `\" + ((.tool_input.command // .tool_input.file_path // \"?\")|tostring|gsub(\"[\\n|`]\";\" \")|.[0:50]) + \"` | \" + ((.tool_response.stderr // .tool_response.error // .tool_response.content // (.tool_response|tostring))|tostring|gsub(\"[\\n|]\";\" \")|.[0:80]) + \" | (자동 기록 — 원인·해결 보완 필요) |  |\"' >> \"${CLAUDE_PROJECT_DIR:-.}/CLAUDE.md\" 2>/dev/null || true",
+            "statusMessage": "오류를 CLAUDE.md 로그에 기록 중..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); cd \"${CLAUDE_PROJECT_DIR:-.}\" || exit 0; case \"$f\" in \"\"|*/llm-wiki/*) ;; *) d=$(git diff -- \"$f\" 2>/dev/null); [ -n \"$d\" ] || d=$(git diff --no-index -- /dev/null \"$f\" 2>/dev/null); [ -n \"$d\" ] && { mkdir -p llm-wiki; printf '\\n## %s · %s\\n\\n```diff\\n%s\\n```\\n' \"$(date '+%Y-%m-%d %H:%M')\" \"$f\" \"$d\" >> llm-wiki/auto-changes.md 2>/dev/null; } ;; esac; python3 llm-wiki/build_site.py >/dev/null 2>&1; exit 0",
+            "statusMessage": "llm-wiki 기록·사이트 재빌드 중..."
+          }
+        ]
+      }
+    ]
+  }
+}
