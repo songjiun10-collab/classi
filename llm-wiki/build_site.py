@@ -61,7 +61,12 @@ HTML = r"""<!DOCTYPE html>
   #topbar .meta{display:flex;align-items:center;gap:12px;
     font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
   #topbar .meta .sep{color:var(--dim)}
-  #shell{flex:1;display:flex;min-height:0}
+  #topbar .left{display:flex;align-items:center;gap:16px}
+  #menu{display:none;flex-direction:column;gap:4px;width:22px;height:22px;padding:0;
+    background:none;border:none;cursor:pointer;align-items:center;justify-content:center}
+  #menu span{display:block;height:1.5px;width:20px;background:var(--bright)}
+  #backdrop{display:none}
+  #shell{flex:1;display:flex;min-height:0;position:relative}
   /* 사이드바 */
   #side{width:300px;min-width:300px;background:var(--panel);border-right:1px solid var(--line);
         display:flex;flex-direction:column;min-height:0}
@@ -117,14 +122,30 @@ HTML = r"""<!DOCTYPE html>
   ::-webkit-scrollbar{width:12px;height:12px}
   ::-webkit-scrollbar-thumb{background:var(--line);border:4px solid #000;background-clip:content-box}
   ::-webkit-scrollbar-thumb:hover{background:var(--dim);background-clip:content-box}
+  /* 모바일 — 사이드바를 오프캔버스 드로어로 */
+  @media(max-width:760px){
+    #menu{display:flex}
+    #side{position:fixed;top:54px;left:0;bottom:0;width:84vw;max-width:320px;z-index:30;
+      transform:translateX(-100%);transition:transform .22s ease}
+    #side.open{transform:none}
+    #backdrop.show{display:block;position:fixed;inset:54px 0 0 0;background:rgba(0,0,0,.55);z-index:20}
+    #content{padding:30px 20px 130px;font-size:15px}
+    #crumb{padding:12px 20px}
+    #topbar{padding:0 16px}
+  }
+  @media(max-width:520px){ #topbar .meta{display:none} }
 </style>
 </head>
 <body>
   <header id="topbar">
-    <div class="brand">LLM Wiki</div>
-    <div class="meta"><span>CLASSI</span><span class="sep">—</span><span>증거기반 분류 엔진</span></div>
+    <div class="left">
+      <button id="menu" aria-label="Toggle index"><span></span><span></span><span></span></button>
+      <div class="brand">LLM Wiki</div>
+    </div>
+    <div class="meta"><span>CLASSI</span><span class="sep">—</span><span>Evidence-based Classifier</span></div>
   </header>
   <div id="shell">
+    <div id="backdrop"></div>
     <nav id="side">
       <div class="rail-label"><span>Index</span><span id="cnt"></span></div>
       <input id="search" placeholder="search" autocomplete="off">
@@ -145,6 +166,14 @@ const searchEl = document.getElementById('search');
 const crumbNode = document.getElementById('crumbNode');
 document.getElementById('cnt').textContent = String(NOTES.length).padStart(2,'0');
 let current = null;
+
+// 모바일 드로어
+const side = document.getElementById('side');
+const backdrop = document.getElementById('backdrop');
+const isMobile = () => window.matchMedia('(max-width:760px)').matches;
+function setDrawer(open){ side.classList.toggle('open',open); backdrop.classList.toggle('show',open); }
+document.getElementById('menu').onclick = () => setDrawer(!side.classList.contains('open'));
+backdrop.onclick = () => setDrawer(false);
 
 function colorizeDiff(html){
   return html.replace(/<pre><code class="language-diff">([\s\S]*?)<\/code><\/pre>/g,
@@ -184,6 +213,7 @@ function render(path){
   contentEl.querySelectorAll('.wikilink[data-path]').forEach(el =>
     el.onclick = () => render(el.dataset.path));
   history.replaceState(null,'','#'+encodeURIComponent(path));
+  if(isMobile()) setDrawer(false);   // 노트 선택 시 드로어 닫기
 }
 
 function buildList(filter=''){
