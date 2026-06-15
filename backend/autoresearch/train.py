@@ -17,8 +17,9 @@ from . import prepare
 CONFIG = {
     "context_len": 4,   # 직전 몇 바이트를 볼지
     "hidden": 64,       # 은닉 차원
-    "lr": 0.5,          # SGD 학습률
+    "lr": 0.5,          # 학습률
     "batch_size": 64,   # 미니배치 크기
+    "momentum": 0.9,    # 모멘텀 계수(0=순수 SGD). program.md 백로그 적용분.
 }
 
 
@@ -33,6 +34,9 @@ class CharMLP:
         self.b1 = np.zeros(hidden)
         self.W2 = rng.standard_normal((hidden, prepare.VOCAB)) * (1.0 / np.sqrt(hidden))
         self.b2 = np.zeros(prepare.VOCAB)
+        # 모멘텀 속도 버퍼(파라미터별). momentum=0이면 순수 SGD와 동일.
+        self.vW1 = np.zeros_like(self.W1); self.vb1 = np.zeros_like(self.b1)
+        self.vW2 = np.zeros_like(self.W2); self.vb2 = np.zeros_like(self.b2)
 
     def _onehot(self, X):
         B = len(X)
@@ -58,8 +62,9 @@ class CharMLP:
             z = np.exp(logits)
             return logits - np.log(z.sum(axis=1, keepdims=True))
 
-    def step(self, X, Y, lr):
-        """미니배치 1회 SGD 업데이트. 평균 NLL(nats) 반환."""
+    def step(self, X, Y, lr, momentum=0.0):
+        """미니배치 1회 모멘텀 SGD 업데이트. 평균 NLL(nats) 반환.
+        v ← momentum·v − lr·grad ; param ← param + v (momentum=0이면 순수 SGD)."""
         oh, h, logits = self._forward(X)
         logits -= logits.max(axis=1, keepdims=True)
         p = np.exp(logits)
@@ -74,8 +79,10 @@ class CharMLP:
         dh = (dlogits @ self.W2.T) * (1.0 - h * h)
         dW1 = oh.T @ dh
         db1 = dh.sum(axis=0)
-        self.W2 -= lr * dW2; self.b2 -= lr * db2
-        self.W1 -= lr * dW1; self.b1 -= lr * db1
+        self.vW2 = momentum * self.vW2 - lr * dW2; self.W2 += self.vW2
+        self.vb2 = momentum * self.vb2 - lr * db2; self.b2 += self.vb2
+        self.vW1 = momentum * self.vW1 - lr * dW1; self.W1 += self.vW1
+        self.vb1 = momentum * self.vb1 - lr * db1; self.b1 += self.vb1
         return loss
 
 
@@ -94,7 +101,7 @@ def train(config, train_data, budget_sec, seed):
     with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
         while time.monotonic() < deadline:
             X, Y = prepare.get_batch(train_data, config["context_len"], config["batch_size"], rng)
-            loss = model.step(X, Y, config["lr"])
+            loss = model.step(X, Y, config["lr"], config.get("momentum", 0.0))
             steps += 1
             if not np.isfinite(loss):
                 break

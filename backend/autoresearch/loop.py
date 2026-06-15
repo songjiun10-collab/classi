@@ -30,15 +30,17 @@ def run_experiment(config, train_data, val_data, budget_sec, seed):
 def _mutate(config, rng):
     """최선 config의 노브 하나를 작게 흔든다(이산 언덕오르기)."""
     c = copy.deepcopy(config)
-    knob = rng.choice(["context_len", "hidden", "lr", "batch_size"])
+    knob = rng.choice(["context_len", "hidden", "lr", "batch_size", "momentum"])
     if knob == "context_len":
         c["context_len"] = int(np.clip(c["context_len"] + rng.choice([-1, 1]), 1, 8))
     elif knob == "hidden":
         c["hidden"] = int(np.clip(c["hidden"] * rng.choice([0.5, 2.0]), 8, 256))
     elif knob == "lr":
         c["lr"] = float(np.clip(c["lr"] * rng.choice([0.5, 2.0]), 0.01, 4.0))
-    else:
+    elif knob == "batch_size":
         c["batch_size"] = int(np.clip(c["batch_size"] * rng.choice([0.5, 2.0]), 8, 256))
+    else:
+        c["momentum"] = float(np.clip(c.get("momentum", 0.9) + rng.choice([-0.2, 0.05]), 0.0, 0.98))
     return c
 
 

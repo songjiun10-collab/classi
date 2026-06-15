@@ -39,3 +39,12 @@ prepare(고정)/train(탐색) 분리.
 - numpy 전용(torch 없음), CPU·결정적(seed 고정). ollama 미사용(장시간 추론 회피).
 - 발산(높은 lr) 런은 errstate+nan_to_num+조기종료로 '유한하지만 나쁜 bpb'를 내고 루프가
   정상 기각 → 평가가 경고/예외로 깨지지 않음.
+
+## 후속 — 모멘텀 옵티마이저 (program.md 백로그 적용)
+`train.py`(탐색공간)에 모멘텀 SGD 추가: `CharMLP` 파라미터별 속도 버퍼 +
+`step(lr, momentum)`, `CONFIG momentum=0.9`, `loop._mutate` momentum 노브.
+momentum 미지정 시 0.0=순수 SGD(하위호환, 스모크 3건 그대로 OK).
+- **결과**: 12라운드 탐색에서 모멘텀만 켜면 lr 과조정으로 악화(0.23)했으나, 루프가
+  lr을 0.5→0.125·hidden 64→16으로 동반 조정해 **val_bpb 0.1845 → 0.1780** 개선.
+- **의미**: 단일 변경(momentum)이 다른 노브(lr)와 상호작용 → 고정예산·불변메트릭 위
+  탐색이 결합 최적점을 자동 발견. autoresearch 루프의 핵심 가치 시연.
