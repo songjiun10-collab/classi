@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# OS
+.DS_Store
+
+# 데이터/런타임 (코드 아님, 토큰가드 대상)
+data/
+logs/
+*.db
+*.log
+
+# 생성물
+calibration_weights.json
+*.hwpx
+
+# 프론트/정적 (이 repo 범위 밖 — 혹시 섞여도 제외)
+node_modules/
+static/
+public/
+
+# Claude Code 하니스 로컬 설정
+.claude/
