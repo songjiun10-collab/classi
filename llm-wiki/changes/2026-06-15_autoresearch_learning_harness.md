@@ -66,3 +66,13 @@ warmup 노브 추가(옵티마이저 전환 시 lr 스케일 동반 보정). 모
   2층 MLP·weight decay는 이 과제·예산에선 이득 없음(예산 내 스텝 감소)을 확인 → drop.
   = autoresearch가 '안 되는 변경'도 데이터로 기각하는 모습 시연.
 - 스모크 3건 OK, test_engine 회귀 없음.
+
+## 후속4 — 실데이터 코퍼스 + 잔차연결 + LayerNorm
+- `corpus.txt`(classi 도메인 한/영 혼합 실데이터성) 추가, `prepare._corpus`가 우선 로드
+  (없으면 내장 문단 폴백). 한글 멀티바이트 UTF-8 통계까지 학습 대상 → 난이도↑.
+- `train.py`에 잔차 연결(`residual`)·LayerNorm(`layernorm`, affine 없음) 추가.
+  `loop._mutate`에 두 노브. **수치 미분 그래디언트 체크 테스트 추가**로 잔차+LN+2층
+  backprop 정확성 보증(해석적≈수치, 1e-4 이내).
+- **결과**: 실데이터 16라운드 baseline 0.2302 → best **0.2249**(SGD+emb_dim 32). 실데이터는
+  합성보다 어려워 bpb↑(정상). 탐색이 잔차/LN은 이 소규모 과제선 미채택(이득 없음) 확인.
+- 테스트 4건 OK(스모크3+그래디언트체크), test_engine 회귀 없음.

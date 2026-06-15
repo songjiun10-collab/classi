@@ -31,7 +31,8 @@ def _mutate(config, rng):
     """최선 config의 노브 하나를 작게 흔든다(이산 언덕오르기)."""
     c = copy.deepcopy(config)
     knob = rng.choice(["context_len", "hidden", "emb_dim", "lr", "batch_size",
-                       "momentum", "optimizer", "warmup_frac", "n_layers", "weight_decay"])
+                       "momentum", "optimizer", "warmup_frac", "n_layers", "weight_decay",
+                       "residual", "layernorm"])
     if knob == "context_len":
         c["context_len"] = int(np.clip(c["context_len"] + rng.choice([-1, 1]), 1, 8))
     elif knob == "hidden":
@@ -51,6 +52,10 @@ def _mutate(config, rng):
     elif knob == "weight_decay":
         cur = c.get("weight_decay", 0.0)
         c["weight_decay"] = 1e-4 if cur == 0.0 else float(np.clip(cur * rng.choice([0.1, 10.0]), 0.0, 1e-2))
+    elif knob == "residual":
+        c["residual"] = not c.get("residual", False)
+    elif knob == "layernorm":
+        c["layernorm"] = not c.get("layernorm", False)
     else:  # optimizer 전환 시 그 옵티마이저에 맞는 lr 스케일을 동반 설정(결합 보정)
         c["optimizer"] = "sgd" if c.get("optimizer", "adam") == "adam" else "adam"
         c["lr"] = 0.2 if c["optimizer"] == "sgd" else 0.01
