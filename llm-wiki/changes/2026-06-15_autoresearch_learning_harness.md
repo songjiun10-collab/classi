@@ -57,3 +57,12 @@ warmup 노브 추가(옵티마이저 전환 시 lr 스케일 동반 보정). 모
 - **결과**: 14라운드 탐색에서 Adam+임베딩 baseline 0.1758 → **best val_bpb 0.1734**
   (무모멘텀 0.1845 · 모멘텀 0.1780 대비 추가 개선). 임베딩으로 스텝당 비용↓ + Adam의
   적응적 lr이 결합해 같은 예산에서 더 낮은 bpb 달성.
+
+## 후속3 — 남은 백로그 (코퍼스 확장 + 다층 MLP + weight decay)
+- `prepare._PARAGRAPHS` 다주제 코퍼스로 확장(벤치마크 재정의 → bpb 수치는 이전과 직접
+  비교 불가). `train.py`에 다층 MLP(`n_layers`)·weight decay(`weight_decay`) 추가,
+  일반 다층 backprop으로 리팩터. `loop._mutate`에 n_layers/weight_decay 노브.
+- **결과**: 확장 코퍼스 16라운드 baseline 0.1914 → **best 0.1890**(emb_dim 32). 탐색이
+  2층 MLP·weight decay는 이 과제·예산에선 이득 없음(예산 내 스텝 감소)을 확인 → drop.
+  = autoresearch가 '안 되는 변경'도 데이터로 기각하는 모습 시연.
+- 스모크 3건 OK, test_engine 회귀 없음.

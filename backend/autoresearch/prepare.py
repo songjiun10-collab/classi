@@ -14,20 +14,32 @@ SEED = 1337
 DEFAULT_BUDGET_SEC = 3.0  # 실험당 고정 벽시계 예산(통제). autoresearch의 '5분/실험'에 대응.
 VOCAB = 256               # 바이트 단위 vocab(고정). val_bpb가 vocab 비의존인 이유.
 
-# 학습 대상 코퍼스. 패턴이 또렷해 짧은 예산에도 bpb가 또렷이 떨어진다(시연용).
-_PARAGRAPH = (
+# 학습 대상 코퍼스. 여러 주제 문단을 섞어 단순 타일링보다 풍부하게(난이도↑·현실성↑).
+# 코퍼스를 바꾸면 val_bpb의 의미(=이 데이터에 대한 압축률)가 바뀌므로 과거 수치와 직접
+# 비교 불가 — 벤치마크 재정의다. 한 번의 탐색(search) 안에서는 여전히 고정(통제 변인).
+_PARAGRAPHS = [
     "autoresearch trains a tiny model under a fixed wall-clock budget, then measures "
     "validation bits-per-byte. the budget is fixed so that different code changes are "
-    "compared at equal compute, not at equal effort. the metric is per-byte so that "
-    "changing the vocabulary cannot game the score. prepare stays frozen; only the search "
-    "space in train may change; the loop keeps whatever lowers val_bpb. classi reuses this "
-    "loop as a learning artifact: fix the metric, fix the budget, iterate, keep the best.\n"
-)
+    "compared at equal compute, not at equal effort.",
+    "the metric is per-byte so that changing the vocabulary cannot game the score. "
+    "prepare stays frozen; only the search space in train may change; the loop keeps "
+    "whatever lowers val_bpb.",
+    "classi classifies korean exam pdfs into subject and sub-subject at the level of "
+    "individual problems, combining a vision model with ontology evidence and confidence "
+    "calibration.",
+    "the same scientific loop applies: fix the metric, fix the budget, iterate, keep the "
+    "best. hill-climbing over hyperparameters finds coupled optima that a single change "
+    "could not reveal on its own.",
+]
 
 
 def _corpus() -> bytes:
-    """결정적 코퍼스(문단을 타일링해 학습 가능한 바이트 통계를 만든다)."""
-    return (_PARAGRAPH * 8).encode("utf-8")
+    """결정적 코퍼스(여러 문단을 결정적 순서로 반복해 학습 가능한 바이트 통계를 만든다)."""
+    text = ""
+    for r in range(6):
+        for i, p in enumerate(_PARAGRAPHS):
+            text += _PARAGRAPHS[(i + r) % len(_PARAGRAPHS)] + "\n"
+    return text.encode("utf-8")
 
 
 def load_data():

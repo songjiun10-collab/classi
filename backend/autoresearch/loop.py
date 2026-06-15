@@ -30,8 +30,8 @@ def run_experiment(config, train_data, val_data, budget_sec, seed):
 def _mutate(config, rng):
     """최선 config의 노브 하나를 작게 흔든다(이산 언덕오르기)."""
     c = copy.deepcopy(config)
-    knob = rng.choice(["context_len", "hidden", "emb_dim", "lr",
-                       "batch_size", "momentum", "optimizer", "warmup_frac"])
+    knob = rng.choice(["context_len", "hidden", "emb_dim", "lr", "batch_size",
+                       "momentum", "optimizer", "warmup_frac", "n_layers", "weight_decay"])
     if knob == "context_len":
         c["context_len"] = int(np.clip(c["context_len"] + rng.choice([-1, 1]), 1, 8))
     elif knob == "hidden":
@@ -46,6 +46,11 @@ def _mutate(config, rng):
         c["momentum"] = float(np.clip(c.get("momentum", 0.9) + rng.choice([-0.2, 0.05]), 0.0, 0.98))
     elif knob == "warmup_frac":
         c["warmup_frac"] = float(np.clip(c.get("warmup_frac", 0.1) + rng.choice([-0.05, 0.05]), 0.0, 0.5))
+    elif knob == "n_layers":
+        c["n_layers"] = int(np.clip(c.get("n_layers", 1) + rng.choice([-1, 1]), 1, 3))
+    elif knob == "weight_decay":
+        cur = c.get("weight_decay", 0.0)
+        c["weight_decay"] = 1e-4 if cur == 0.0 else float(np.clip(cur * rng.choice([0.1, 10.0]), 0.0, 1e-2))
     else:  # optimizer 전환 시 그 옵티마이저에 맞는 lr 스케일을 동반 설정(결합 보정)
         c["optimizer"] = "sgd" if c.get("optimizer", "adam") == "adam" else "adam"
         c["lr"] = 0.2 if c["optimizer"] == "sgd" else 0.01

@@ -32,8 +32,9 @@ python3 -m autoresearch.loop          # 기준 CONFIG → 변이 탐색 → val_
 
 ## 파일
 - `prepare.py` — 불변부: 데이터·dataloader·`eval_bpb`(불변 메트릭). **수정 금지.**
-- `train.py` — 탐색공간: `CONFIG`(context_len/hidden/emb_dim/lr/batch_size/optimizer/
-  momentum/warmup_frac) + 학습 임베딩 + Adam·모멘텀 옵티마이저 + LR 워밍업·감쇠 스케줄.
+- `train.py` — 탐색공간: `CONFIG`(context_len/hidden/n_layers/emb_dim/lr/batch_size/
+  optimizer/momentum/warmup_frac/weight_decay) + 학습 임베딩 + 다층 MLP +
+  Adam·모멘텀 옵티마이저 + LR 워밍업·감쇠 스케줄 + weight decay.
 - `loop.py` — 오케스트레이터: 고정예산 실험 반복 + 언덕오르기.
 - `program.md` — 사람이 고치는 연구 조직 코드(목표·규칙·탐색 백로그).
 
