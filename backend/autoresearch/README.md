@@ -31,10 +31,12 @@ python3 -m autoresearch.loop          # 기준 CONFIG → 변이 탐색 → val_
 출력 예: 각 라운드의 `bpb`/`steps`와 KEEP/drop, 마지막에 best config·bpb(균등분포 8.0 대비).
 
 ## 파일
-- `prepare.py` — 불변부: 데이터·dataloader·`eval_bpb`(불변 메트릭). **수정 금지.**
+- `prepare.py` — 불변부: 데이터·dataloader·`eval_bpb`(불변 메트릭). **탐색 중 수정 금지.**
+- `corpus.txt` — 실데이터성 코퍼스(classi 도메인 한/영 혼합). prepare가 우선 로드.
 - `train.py` — 탐색공간: `CONFIG`(context_len/hidden/n_layers/emb_dim/lr/batch_size/
-  optimizer/momentum/warmup_frac/weight_decay) + 학습 임베딩 + 다층 MLP +
-  Adam·모멘텀 옵티마이저 + LR 워밍업·감쇠 스케줄 + weight decay.
+  optimizer/momentum/warmup_frac/weight_decay/residual/layernorm) + 학습 임베딩 +
+  다층 MLP + Adam·모멘텀 + LR 스케줄 + weight decay + 잔차연결 + LayerNorm.
+  (backprop 정확성은 수치 미분 그래디언트 체크 테스트로 보증.)
 - `loop.py` — 오케스트레이터: 고정예산 실험 반복 + 언덕오르기.
 - `program.md` — 사람이 고치는 연구 조직 코드(목표·규칙·탐색 백로그).
 

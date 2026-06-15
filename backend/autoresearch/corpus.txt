@@ -1,0 +1,14 @@
+classi는 한국 수능과 모의고사 PDF를 과목과 세부과목 단위로 자동 분류한다.
+문항을 검출하고 비전 모델과 온톨로지 증거를 결합해 신뢰도와 함께 라벨을 만든다.
+과학탐구 영역에는 물리학Ⅰ, 물리학Ⅱ, 화학Ⅰ, 화학Ⅱ, 생명과학Ⅰ, 생명과학Ⅱ, 지구과학Ⅰ, 지구과학Ⅱ가 있다.
+수학 영역의 선택과목은 미적분, 확률과 통계, 기하이며 공통은 수학Ⅰ과 수학Ⅱ다.
+국어는 화법과 작문, 언어와 매체, 독서, 문학으로 나뉜다.
+사회탐구에는 생활과 윤리, 윤리와 사상, 한국지리, 세계지리, 동아시아사, 세계사, 경제, 정치와 법, 사회·문화가 있다.
+autoresearch trains a tiny model under a fixed wall-clock budget and measures validation bits per byte.
+the budget is fixed so different code changes are compared at equal compute, not at equal effort.
+the metric is per byte so changing the vocabulary cannot game the score.
+prepare stays frozen during a search; only the search space in train may change; the loop keeps whatever lowers val_bpb.
+hill climbing over hyperparameters finds coupled optima that a single change could not reveal on its own.
+the same scientific loop applies everywhere: fix the metric, fix the budget, iterate, keep the best.
+신뢰도 보정은 증거의 출처와 자신의 신뢰도를 함께 가중해 약한 증거가 강한 증거를 덮지 않게 한다.
+사람이 검수한 gold 라벨이 쌓이면 보정 가중치를 학습할 수 있으나, 데이터 생산 경로가 없으면 폴백을 유지한다.

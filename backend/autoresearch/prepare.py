@@ -8,6 +8,8 @@ karpathy/autoresearch의 `prepare.py`에 대응한다. **탐색/에이전트가 
 - 메트릭은 **validation bits-per-byte(val_bpb)**: 바이트 단위라 vocab/토크나이저에
   독립적 → 모델이 vocab을 키워 점수를 게이밍할 수 없다(불변 메트릭).
 """
+from pathlib import Path
+
 import numpy as np
 
 SEED = 1337
@@ -33,11 +35,22 @@ _PARAGRAPHS = [
 ]
 
 
+_CORPUS_FILE = Path(__file__).parent / "corpus.txt"
+
+
 def _corpus() -> bytes:
-    """결정적 코퍼스(여러 문단을 결정적 순서로 반복해 학습 가능한 바이트 통계를 만든다)."""
+    """결정적 코퍼스. 실데이터(corpus.txt: classi 도메인 한/영 혼합)를 우선 읽고,
+    파일이 없으면 내장 문단으로 폴백(자기완결성 보장). 한글 포함이라 멀티바이트
+    UTF-8 통계까지 학습 대상이 된다(난이도↑). 한 번의 탐색 안에서는 고정."""
+    try:
+        raw = _CORPUS_FILE.read_bytes()
+        if raw:
+            return raw * 4   # 평가셋까지 충분한 분량 확보용 결정적 반복
+    except Exception:
+        pass
     text = ""
     for r in range(6):
-        for i, p in enumerate(_PARAGRAPHS):
+        for i in range(len(_PARAGRAPHS)):
             text += _PARAGRAPHS[(i + r) % len(_PARAGRAPHS)] + "\n"
     return text.encode("utf-8")
 
