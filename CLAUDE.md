@@ -17,8 +17,9 @@ See [README.md](./README.md) for full usage and structure.
 
 ## Working Principles (Karpathy Guidelines)
 
-Derived from Andrej Karpathy's observations of LLM coding pitfalls. Follow these when writing,
-reviewing, and refactoring code here.
+Derived from Andrej Karpathy's observations of LLM coding pitfalls (see [References](#references)).
+Follow these when writing, reviewing, and refactoring code here. **Tradeoff:** they bias toward
+caution over speed — for trivial tasks, use judgment.
 
 1. **Think before coding.** State assumptions and ask when uncertain; don't hide confusion. Offer
    multiple interpretations instead of committing to one. Acknowledge simpler alternatives and push
@@ -28,12 +29,16 @@ reviewing, and refactoring code here.
    *"Would an experienced engineer call this over-engineered?"* → if so, simplify.
 3. **Surgical changes.** Touch only what you must; clean up only what you made. Don't refactor
    working code or reformat unrelated lines. Follow existing style (this repo uses Korean
-   comments/docstrings). Report dead code rather than deleting it unasked.
+   comments/docstrings). Report dead code rather than deleting it unasked. Every changed line should
+   trace directly to the request.
 4. **Goal-driven execution.** Define success criteria and iterate until verified. Turn work into
    testable goals; present multi-step plans with verification checkpoints.
 5. **Log errors (required).** Every error hit while coding gets a row in the [Error Log](#error-log).
 6. **Log changes (required).** Every file you modify gets recorded in the
    [change history](#change-history).
+
+*These principles are working if: fewer unnecessary changes in diffs, fewer rewrites due to
+overcomplication, and clarifying questions come before implementation rather than after mistakes.*
 
 ## Architecture
 
@@ -114,3 +119,12 @@ Obsidian-openable; kept in-repo because remote containers can't write to a local
 - **Automatic — `docs/obsidian/dev-log/YYYY-MM-DD.md`**: the `PostToolUse` hook appends a
   `[[wikilink]]` line per edited file (version-file changes marked 🔖). With `OBSIDIAN_VAULT` set, it
   also mirrors to `<vault>/Classi-DevLog/`.
+
+## References
+
+- [multica-ai/andrej-karpathy-skills `CLAUDE.md`](https://github.com/multica-ai/andrej-karpathy-skills/blob/main/CLAUDE.md)
+  — source of the working principles above.
+- [karpathy/autoresearch](https://github.com/karpathy/autoresearch) — autonomous overnight ML-research
+  loop. Useful discipline for the `pipeline/auto_deeplearn.py` retraining workflow: a single
+  modification target, a fixed per-experiment time budget (~12 runs/hour), minimal dependencies, and a
+  single metric to compare runs.
