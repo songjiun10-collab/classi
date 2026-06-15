@@ -30,17 +30,25 @@ def run_experiment(config, train_data, val_data, budget_sec, seed):
 def _mutate(config, rng):
     """최선 config의 노브 하나를 작게 흔든다(이산 언덕오르기)."""
     c = copy.deepcopy(config)
-    knob = rng.choice(["context_len", "hidden", "lr", "batch_size", "momentum"])
+    knob = rng.choice(["context_len", "hidden", "emb_dim", "lr",
+                       "batch_size", "momentum", "optimizer", "warmup_frac"])
     if knob == "context_len":
         c["context_len"] = int(np.clip(c["context_len"] + rng.choice([-1, 1]), 1, 8))
     elif knob == "hidden":
         c["hidden"] = int(np.clip(c["hidden"] * rng.choice([0.5, 2.0]), 8, 256))
+    elif knob == "emb_dim":
+        c["emb_dim"] = int(np.clip(c.get("emb_dim", 16) * rng.choice([0.5, 2.0]), 4, 64))
     elif knob == "lr":
-        c["lr"] = float(np.clip(c["lr"] * rng.choice([0.5, 2.0]), 0.01, 4.0))
+        c["lr"] = float(np.clip(c["lr"] * rng.choice([0.5, 2.0]), 0.001, 4.0))
     elif knob == "batch_size":
         c["batch_size"] = int(np.clip(c["batch_size"] * rng.choice([0.5, 2.0]), 8, 256))
-    else:
+    elif knob == "momentum":
         c["momentum"] = float(np.clip(c.get("momentum", 0.9) + rng.choice([-0.2, 0.05]), 0.0, 0.98))
+    elif knob == "warmup_frac":
+        c["warmup_frac"] = float(np.clip(c.get("warmup_frac", 0.1) + rng.choice([-0.05, 0.05]), 0.0, 0.5))
+    else:  # optimizer 전환 시 그 옵티마이저에 맞는 lr 스케일을 동반 설정(결합 보정)
+        c["optimizer"] = "sgd" if c.get("optimizer", "adam") == "adam" else "adam"
+        c["lr"] = 0.2 if c["optimizer"] == "sgd" else 0.01
     return c
 
 

@@ -48,3 +48,12 @@ momentum 미지정 시 0.0=순수 SGD(하위호환, 스모크 3건 그대로 OK)
   lr을 0.5→0.125·hidden 64→16으로 동반 조정해 **val_bpb 0.1845 → 0.1780** 개선.
 - **의미**: 단일 변경(momentum)이 다른 노브(lr)와 상호작용 → 고정예산·불변메트릭 위
   탐색이 결합 최적점을 자동 발견. autoresearch 루프의 핵심 가치 시연.
+
+## 후속2 — program.md 백로그 전체 적용 (임베딩 + Adam + LR 스케줄)
+`train.py` 재작성: one-hot→**학습 임베딩(emb_dim)**, **Adam/모멘텀 옵티마이저** 선택,
+**LR 워밍업+선형감쇠 스케줄(`warmup_frac`)**. `loop._mutate`에 emb_dim/optimizer/
+warmup 노브 추가(옵티마이저 전환 시 lr 스케일 동반 보정). 모델 클래스 `CharMLP`→`CharLM`
+(생성자 (config, rng)). 스모크 테스트 새 API로 갱신, 3건 OK · test_engine 회귀 없음.
+- **결과**: 14라운드 탐색에서 Adam+임베딩 baseline 0.1758 → **best val_bpb 0.1734**
+  (무모멘텀 0.1845 · 모멘텀 0.1780 대비 추가 개선). 임베딩으로 스텝당 비용↓ + Adam의
+  적응적 lr이 결합해 같은 예산에서 더 낮은 bpb 달성.

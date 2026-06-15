@@ -20,10 +20,11 @@ karpathy/autoresearch에서 사람은 Python을 직접 고치지 않고 이 마�
 - `batch_size` 8..256 — 미니배치
 
 ## 시도해볼 아이디어 (사람이 갱신하는 백로그)
-- 더 효율적인 옵티마이저(모멘텀/Adam)로 같은 예산에 더 많은 유효 스텝.
-- 임베딩(one-hot → 학습 임베딩)으로 입력 차원 축소 → 스텝당 비용 절감.
-- learning-rate 스케줄(워밍업 후 감쇠).
-- `context_len`↑의 정확도 이득 vs 스텝당 비용 증가의 트레이드오프 탐색.
+- [x] 더 효율적인 옵티마이저(모멘텀/Adam)로 같은 예산에 더 많은 유효 스텝. → `optimizer` 노브.
+- [x] 임베딩(one-hot → 학습 임베딩)으로 입력 차원 축소 → 스텝당 비용 절감. → `emb_dim` 노브.
+- [x] learning-rate 스케줄(워밍업 후 감쇠). → `warmup_frac` + `_sched_lr`.
+- [ ] `context_len`↑의 정확도 이득 vs 스텝당 비용 증가의 트레이드오프 탐색.
+- [ ] 코퍼스 확장/실데이터, 2-은닉층, 가중치 감쇠(weight decay).
 
 ## 성공 기준 (goal-driven)
 - 기준 CONFIG 대비 `val_bpb`가 유의미하게 낮아지면 채택(loop가 자동 KEEP).

@@ -16,7 +16,7 @@ class TestAutoresearch(unittest.TestCase):
         import math
         import numpy as np
         tr, val = prepare.load_data()
-        m = train.CharMLP(2, 8, np.random.default_rng(0))
+        m = train.CharLM({"context_len": 2, "hidden": 8, "emb_dim": 8}, np.random.default_rng(0))
         bpb = prepare.eval_bpb(m, val, 2)
         self.assertTrue(math.isfinite(bpb) and bpb > 0.0)
 
