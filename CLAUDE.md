@@ -1,140 +1,141 @@
 # CLAUDE.md
 
-이 파일은 [Claude Code](https://claude.com/claude-code)가 이 저장소에서 작업할 때 참고하는 가이드입니다.
+This file guides [Claude Code](https://claude.com/claude-code) when working in this repository.
 
 ---
 
-## 프로젝트 개요
+## Project Overview
 
-**Classi**는 한국 수능·모의고사 PDF를 **과목 / 세부과목 / 단원**으로 자동 분류하는 증거 기반 문항 분류 엔진입니다.
+**Classi** is an evidence-based question-classification engine that automatically sorts Korean
+college-entrance (수능) and mock-exam PDFs into **subject / sub-subject / unit**.
 
-흐름: `PDF → 문항 추출(PyMuPDF) → OCR(PaddleOCR/Tesseract) → 로컬 LLM(Ollama) 분류 → 신뢰도 보정 → 사람 검수 → 재학습`
+Pipeline: `PDF → problem extraction (PyMuPDF) → OCR (PaddleOCR/Tesseract) → local LLM (Ollama) classification → confidence calibration → human review → retraining`
 
-자세한 사용법·구조는 [README.md](./README.md)를 참고하세요.
-
----
-
-## 작업 원칙 (Karpathy Guidelines)
-
-> Andrej Karpathy의 LLM 코딩 함정 관찰에서 도출된 4대 원칙. 이 저장소에서 코드를 쓰고·검토하고·리팩터링할 때 따릅니다.
-
-### 1. 생각하고 코딩하기 (Think Before Coding)
-- **가정을 명시**하고, 불확실하면 묻는다. 혼란을 숨기지 않는다.
-- 한 가지로 단정하지 말고 **여러 해석을 제시**한다.
-- 더 단순한 대안이 있으면 인정하고, 필요하면 **반대 의견을 낸다**.
-
-### 2. 단순함 우선 (Simplicity First)
-- **문제를 푸는 최소한의 코드**만 작성한다. 투기적(speculative) 코드는 금지.
-- 요청하지 않은 기능, 한 번만 쓰는 추상화, 불필요한 유연성·설정, 일어날 수 없는 상황의 에러 처리를 만들지 않는다.
-- 판단 기준: *"숙련된 엔지니어가 이걸 과하게 복잡하다고 볼까?"* → 그렇다면 단순화한다.
-
-### 3. 외과적 변경 (Surgical Changes)
-- **건드려야 할 것만 건드린다. 내가 만든 것만 치운다.**
-- 무관한 코드·주석·포맷을 개선하지 않는다. 동작하는 코드를 리팩터링하지 않는다.
-- **기존 스타일 관례를 따른다** (이 저장소는 한국어 주석·docstring을 적극 사용).
-- 죽은 코드는 발견하면 **보고**하되, 요청 없이는 삭제하지 않는다.
-- 내 변경이 고아로 만든 import/변수/함수만 제거한다.
-
-### 4. 목표 주도 실행 (Goal-Driven Execution)
-- **성공 기준을 정의하고, 검증될 때까지 반복**한다.
-- 작업을 테스트 가능한 측정 목표로 바꾼다. 다단계 계획은 검증 체크포인트와 함께 제시한다.
-
-### 5. 오류 기록 (Error Logging) — **필수**
-- **코드를 작성·실행하다 오류가 발생하면, 무조건 아래 [오류 기록 로그](#오류-기록-로그)에 한 줄 추가한다.**
-- 기록 항목: 날짜, 발생 위치(파일/명령), 증상, 원인, 해결 방법.
-- **오류는 해결책(해결 방법)까지 반드시 채운다.** 해결 칸을 비워두지 말고, 어떻게 고쳤는지/우회했는지 남긴다.
-- 같은 실수를 반복하지 않기 위한 장치이므로, 사소해 보여도 빠짐없이 남긴다.
-
-### 6. LLM Wiki 기록 (변경 이력) — **필수**
-- **파일을 수정하면, 그 수정 내용을 [`llm-wiki/`](./llm-wiki/)에 기록한다.** (Obsidian Vault로 열 수 있는 마크다운 노트 모음.)
-- 기록 항목: 날짜, 수정한 파일, 변경 요약, 그리고 **전체 diff**.
-- 원격 환경에서는 사용자 PC의 로컬 Obsidian Vault에 직접 쓸 수 없으므로, 저장소 안의 `llm-wiki/`에 남기고 Obsidian으로 열거나 동기화한다.
+See [README.md](./README.md) for detailed usage and structure.
 
 ---
 
-## 아키텍처 메모
+## Working Principles (Karpathy Guidelines)
 
-> ⚠️ 현재 활성 백엔드 소스는 `backend/`가 아니라 타임스탬프 백업 디렉터리
-> (`backend.bak.YYYYMMDD_HHMMSS/`)에 있습니다. 백엔드 작업 시 위치를 먼저 확인하세요.
+> Four principles derived from Andrej Karpathy's observations of LLM coding pitfalls. Follow these when writing, reviewing, and refactoring code in this repo.
 
-- **`core/classifier_engine.py`** — 분류기 코어. PDF 추출, OCR 백엔드 선택, 문제 박스 검출, 프롬프트 생성, 추론 캐시.
-- **`core/ontology.py`** — 교육과정 온톨로지. `SUBJECTS`, `CURRICULUM`, 키워드 세트, `SUBJECT_ALIASES`/`SUB_SUBJECT_ALIASES`(줄임말 정규화). **분류 체계를 바꾸면 여기가 단일 출처(source of truth)다.**
-- **`core/confidence.py`** — pro/anti/경쟁 증거 기반 신뢰도 보정.
-- **`core/retrieval.py`** — 학습 DB(SQLite) RAG 검색.
-- **`api/server.py`** — FastAPI 서버. 분류는 백그라운드 태스크로 돌고, `TASKS`/`CAPTURES`는 `CLASSI_MAX_TASKS` 상한으로 evict된다.
-- **`pipeline/auto_deeplearn.py`** — 현행 자동 딥러닝 오케스트레이션. (`gamma_consumer.py`는 DEPRECATED.)
-- **`tools/english_analyzer.py`** — 독립 실행 영어 지문 분석 CLI.
-- **`frontend/classi_index.html`** — 단일 페이지 웹 UI. `firebase-auth.js`로 소셜 로그인.
+### 1. Think Before Coding
+- **State your assumptions**, and ask when uncertain. Don't hide confusion.
+- Don't commit to a single reading — **offer multiple interpretations**.
+- Acknowledge simpler alternatives, and **push back** when warranted.
+
+### 2. Simplicity First
+- Write only the **minimum code that solves the problem**. No speculative code.
+- Don't build unrequested features, single-use abstractions, needless flexibility/config, or error handling for situations that can't occur.
+- Litmus test: *"Would an experienced engineer call this over-engineered?"* → if so, simplify.
+
+### 3. Surgical Changes
+- **Touch only what you must. Clean up only what you made.**
+- Don't improve unrelated code/comments/formatting. Don't refactor working code.
+- **Follow existing style conventions** (this repo uses Korean comments/docstrings heavily).
+- **Report** dead code when you find it, but don't delete it without being asked.
+- Remove only the imports/variables/functions your change orphaned.
+
+### 4. Goal-Driven Execution
+- **Define success criteria and iterate until verified.**
+- Turn work into testable, measurable goals. Present multi-step plans with verification checkpoints.
+
+### 5. Error Logging — **REQUIRED**
+- **Whenever an error occurs while writing or running code, add a line to the [Error Log](#error-log) below — no exceptions.**
+- Record: date, location (file/command), symptom, cause, fix.
+- **Always fill in the fix.** Never leave the fix column blank — note how you fixed or worked around it.
+- This exists to avoid repeating mistakes, so log everything, even if it seems trivial.
+
+### 6. LLM Wiki Logging (change history) — **REQUIRED**
+- **When you modify a file, record the change in [`llm-wiki/`](./llm-wiki/)** (a set of markdown notes openable as an Obsidian Vault).
+- Record: date, modified file(s), change summary, and the **full diff**.
+- In remote environments you can't write to the user's local Obsidian Vault directly, so keep notes in the repo's `llm-wiki/` and open/sync them via Obsidian.
 
 ---
 
-## 자주 쓰는 명령어
+## Architecture Notes
+
+> ⚠️ The active backend source currently lives in a timestamped backup directory
+> (`backend.bak.YYYYMMDD_HHMMSS/`), **not** in `backend/`. Check the location first before backend work.
+
+- **`core/classifier_engine.py`** — Classifier core. PDF extraction, OCR backend selection, problem-box detection, prompt building, inference cache.
+- **`core/ontology.py`** — Curriculum ontology. `SUBJECTS`, `CURRICULUM`, keyword sets, `SUBJECT_ALIASES`/`SUB_SUBJECT_ALIASES` (abbreviation normalization). **This is the single source of truth for the classification scheme.**
+- **`core/confidence.py`** — Confidence calibration based on pro/anti/competing evidence.
+- **`core/retrieval.py`** — RAG search over the training DB (SQLite).
+- **`api/server.py`** — FastAPI server. Classification runs as a background task; `TASKS`/`CAPTURES` are evicted under the `CLASSI_MAX_TASKS` cap.
+- **`pipeline/auto_deeplearn.py`** — Current auto-deep-learning orchestration. (`gamma_consumer.py` is DEPRECATED.)
+- **`tools/english_analyzer.py`** — Standalone English-passage analysis CLI.
+- **`frontend/classi_index.html`** — Single-page web UI. Social login via `firebase-auth.js`.
+
+---
+
+## Common Commands
 
 ```bash
-# 단위 테스트 (ollama·OCR 불필요, 결정적)
+# Unit tests (no ollama/OCR needed, deterministic)
 cd backend && python3 -m unittest tests.test_engine -v
 
-# API 서버만 실행
+# API server only
 cd backend/api && uvicorn server:app --host 0.0.0.0 --port 8000 --reload
 
-# 전체 스택 (Ollama 먼저 실행되어 있어야 함)
+# Full stack (Ollama must already be running)
 cd scripts && ./run.sh
 ```
 
 ---
 
-## 동작에 영향을 주는 환경 변수
+## Environment Variables That Affect Behavior
 
-| 변수 | 기본값 | 설명 |
-|------|--------|------|
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama 서버 주소 |
-| `CLASSI_OCR` | `paddle` | OCR 백엔드(`paddle`/`tesseract`) |
-| `CLASSI_OCR_DET` | `mobile` | 검출기(`mobile` 빠름 / `server` 정확·느림 ~12배) |
-| `CLASSI_FORMULA` | `0` | `1`이면 LaTeX 수식 인식 추가(느림·발열↑) |
-| `CLASSI_MAX_TASKS` | `50` | 메모리 상한용 태스크 보관 개수 |
-
----
-
-## 주의사항
-
-- **크리덴셜을 커밋하지 마세요.** 텔레그램 다운로더는 `TELEGRAM_API_ID`/`TELEGRAM_API_HASH` 환경변수를 우선합니다. `firebase-auth.js`의 config는 플레이스홀더이며 실제 키로 채운 채 커밋하지 않습니다. `scripts/yubin_session.session`(텔레그램 세션)도 공유 금지.
-- OCR/LLM 추론은 CPU·이벤트 루프 부하가 크므로, 서버에서는 `asyncio.to_thread`로 오프로드하는 기존 패턴을 유지하세요.
-- 분류 결과 스키마는 `Classification`(pydantic) 모델을 따릅니다.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama server address |
+| `CLASSI_OCR` | `paddle` | OCR backend (`paddle`/`tesseract`) |
+| `CLASSI_OCR_DET` | `mobile` | Detector (`mobile` fast / `server` accurate but ~12× slower) |
+| `CLASSI_FORMULA` | `0` | `1` adds LaTeX formula recognition (slower, more heat) |
+| `CLASSI_MAX_TASKS` | `50` | Number of tasks retained (memory cap) |
 
 ---
 
-## Obsidian 연동
+## Cautions
 
-원칙 **6. LLM Wiki 기록**의 `llm-wiki/`(수동 변경 이력)에 더해, 이 저장소는 두 가지 자동 연동을
-제공한다. 자세한 사용법은 [`docs/obsidian/README.md`](./docs/obsidian/README.md) 참고.
-
-1. **기출 분류 결과 → 볼트** (앱, 설정 → 데이터 관리)
-   - "Obsidian 내보내기" — 문항·과목·주제를 `[[위키링크]]` `.md` 묶음 `.zip`으로 다운로드(모든 브라우저).
-   - "볼트 연결" — 폴더 지정 후 분류 시마다 자동 저장(File System Access API, Chromium 전용).
-   - 핵심 함수(`frontend/classi_index.html`): `obsidianFiles()`(노트 생성), `buildZip()`(순수 JS ZIP), `syncObsidianVault()`.
-2. **Claude Code 개발 로그 → Obsidian** (훅)
-   - `.claude/settings.json`의 PostToolUse 훅이 `scripts/hooks/obsidian_devlog.py`를 실행 →
-     `docs/obsidian/dev-log/YYYY-MM-DD.md`에 변경 파일을 `[[위키링크]]`로 기록(버전 파일 변경은 🔖).
-   - `OBSIDIAN_VAULT` 환경변수 지정 시 로컬 볼트(`<볼트>/Classi-DevLog/`)에도 미러.
+- **Never commit credentials.** The Telegram downloader prefers the `TELEGRAM_API_ID`/`TELEGRAM_API_HASH` env vars. The config in `firebase-auth.js` is a placeholder — don't commit it filled with real keys. Don't share `scripts/yubin_session.session` (Telegram session) either.
+- OCR/LLM inference is CPU- and event-loop-heavy, so keep the existing pattern of offloading with `asyncio.to_thread` on the server.
+- The classification result schema follows the `Classification` (pydantic) model.
 
 ---
 
-## 오류 기록 로그
+## Obsidian Integration
 
-> 작업 원칙 **5. 오류 기록**에 따라, 코딩 중 발생한 오류는 여기에 한 줄씩 누적합니다.
-> (오래된 항목을 지우지 말고 계속 아래에 추가하세요.)
+In addition to the manual `llm-wiki/` change history (principle **6. LLM Wiki Logging**), this repo
+provides two automated integrations. See [`docs/obsidian/README.md`](./docs/obsidian/README.md) for details.
 
-| 날짜 | 위치(파일/명령) | 증상 | 원인 | 해결 |
-|------|------------------|------|------|------|
-| _예시_ | `core/classifier_engine.py` | `ModuleNotFoundError: paddleocr` | OCR 의존성 미설치 | `pip install paddleocr` 또는 `CLASSI_OCR=tesseract`로 폴백 |
+1. **Classified results → vault** (app, Settings → Data Management)
+   - "Obsidian Export" — download problems/subjects/topics as a `.zip` bundle of `[[wikilink]]`ed `.md` notes (all browsers).
+   - "Connect Vault" — pick a folder, then auto-save on every classification (File System Access API, Chromium only).
+   - Key functions (`frontend/classi_index.html`): `obsidianFiles()` (note generation), `buildZip()` (pure-JS ZIP), `syncObsidianVault()`.
+2. **Claude Code dev log → Obsidian** (hook)
+   - The PostToolUse hook in `.claude/settings.json` runs `scripts/hooks/obsidian_devlog.py` →
+     records changed files as `[[wikilinks]]` in `docs/obsidian/dev-log/YYYY-MM-DD.md` (version-file changes marked 🔖).
+   - If `OBSIDIAN_VAULT` is set, it also mirrors to a local vault (`<vault>/Classi-DevLog/`).
 
 ---
 
-## LLM Wiki (변경 이력)
+## Error Log
 
-> 작업 원칙 **6. LLM Wiki 기록**에 따라, 파일을 수정할 때마다 변경 내용을 [`llm-wiki/`](./llm-wiki/)에 남깁니다.
+> Per working principle **5. Error Logging**, accumulate errors encountered while coding here, one line each.
+> (Don't delete old entries — keep appending below.)
 
-- **위치**: 저장소 내 `llm-wiki/` 폴더(Obsidian Vault로 열거나 동기화).
-- **형식**: 수정 1건당 노트 1개(또는 누적 로그)에 다음을 적는다 —
-  - 날짜·시각, 수정한 파일 경로, 변경 요약, **전체 diff**(```diff 코드블록).
-- **이유**: 원격(클라우드) 컨테이너에서는 로컬 Obsidian Vault에 직접 쓸 수 없어, 저장소 안에 두고 Obsidian으로 연다.
+| Date | Location (file/command) | Symptom | Cause | Fix |
+|------|-------------------------|---------|-------|-----|
+| _example_ | `core/classifier_engine.py` | `ModuleNotFoundError: paddleocr` | OCR dependency not installed | `pip install paddleocr`, or fall back with `CLASSI_OCR=tesseract` |
+
+---
+
+## LLM Wiki (change history)
+
+> Per working principle **6. LLM Wiki Logging**, record every file modification in [`llm-wiki/`](./llm-wiki/).
+
+- **Location**: the repo's `llm-wiki/` folder (open/sync as an Obsidian Vault).
+- **Format**: one note per change (or an append-only log) recording —
+  - date/time, modified file paths, change summary, and the **full diff** (in a ```diff code block).
+- **Why**: remote (cloud) containers can't write to the local Obsidian Vault directly, so keep it in the repo and open it via Obsidian.
