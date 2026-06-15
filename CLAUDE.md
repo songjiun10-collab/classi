@@ -49,14 +49,22 @@ overcomplication, and clarifying questions come before implementation rather tha
 |------|------|
 | `core/classifier_engine.py` | Classifier core: PDF extraction, OCR backend selection, problem-box detection, prompt building, inference cache |
 | `core/ontology.py` | Curriculum ontology — `SUBJECTS`, `CURRICULUM`, keyword sets, alias maps. **Single source of truth for the classification scheme.** |
-| `core/confidence.py` | Confidence calibration from pro/anti/competing evidence |
+| `core/confidence.py` | Confidence calibration from pro/anti/competing evidence; at inference consumes the gold-tagged `calibration_weights.json` |
+| `core/review_log.py` | Review DB (SQLite): stores predictions + telemetry, and the human `gold_subject` written on `resolve()` |
 | `core/retrieval.py` | RAG search over the training DB (SQLite) |
 | `api/server.py` | FastAPI server. Classification runs as a background task; `TASKS`/`CAPTURES` evict under `CLASSI_MAX_TASKS` |
-| `pipeline/auto_deeplearn.py` | Current auto-deep-learning orchestration (`gamma_consumer.py` is DEPRECATED) |
+| `pipeline/calibration_trainer.py` | **Current learning stage.** Fits logistic-regression calibration weights from gold-resolved review rows → `calibration_weights.json` (`source: "gold"`). Supersedes `auto_deeplearn.train_calibration` (circular self-prediction) and the dead `gamma_consumer.py` |
+| `pipeline/seed_review_gold.py` | Batch-seeds review_log gold from labeled exams (a manifest of file→`gold_subject`), filling the flywheel without one-by-one human review. Defaults to a separate seed DB |
+| `pipeline/auto_deeplearn.py` | PDF download + classify orchestration. Its `train_calibration` self-prediction step is superseded by `calibration_trainer.py` |
 | `tools/english_analyzer.py` | Standalone English-passage analysis CLI |
 | `frontend/classi_index.html` | Single-page web UI; social login via `firebase-auth.js` |
 
 The classification result schema follows the `Classification` (pydantic) model.
+
+**Data flywheel:** classify → `review_log` (telemetry + human `gold_subject`) →
+`calibration_trainer` (fit on gold) → `calibration_weights.json` (`source: "gold"`) →
+`calibrate_confidence` (inference). `seed_review_gold` batch-fills the gold step from labeled exams.
+Only gold-tagged weights are trusted — never the self-prediction weights from the old pipeline.
 
 ## Common Commands
 
@@ -125,6 +133,7 @@ Obsidian-openable; kept in-repo because remote containers can't write to a local
 - [multica-ai/andrej-karpathy-skills `CLAUDE.md`](https://github.com/multica-ai/andrej-karpathy-skills/blob/main/CLAUDE.md)
   — source of the working principles above.
 - [karpathy/autoresearch](https://github.com/karpathy/autoresearch) — autonomous overnight ML-research
-  loop. Useful discipline for the `pipeline/auto_deeplearn.py` retraining workflow: a single
-  modification target, a fixed per-experiment time budget (~12 runs/hour), minimal dependencies, and a
-  single metric to compare runs.
+  loop. Useful discipline for the calibration learning loop (`calibration_trainer.py`): a single
+  modification target, a fixed per-experiment budget, minimal dependencies, and a single metric to
+  compare runs. (Note: Ollama only serves inference — any real fine-tuning happens outside it, then is
+  imported as GGUF.)
