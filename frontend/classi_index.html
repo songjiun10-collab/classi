@@ -855,6 +855,10 @@ input,select{font:inherit;color:inherit;outline:none;letter-spacing:inherit}
               <div class="srow-ctrl"><button class="btn btn-sm" onclick="exportObsidian()">Obsidian 내보내기</button></div>
             </div>
             <div class="srow">
+              <div><div class="srow-label">Obsidian 자동 저장</div><div class="srow-sub" id="vault-status">연결 안 됨 — 분류할 때마다 볼트에 자동 기록</div></div>
+              <div class="srow-ctrl"><button class="btn btn-sm" onclick="connectObsidianVault()">볼트 연결</button> <button class="btn btn-sm" id="vault-disconnect" style="display:none" onclick="disconnectObsidianVault()">해제</button></div>
+            </div>
+            <div class="srow">
               <div><div class="srow-label">전체 초기화</div><div class="srow-sub">모든 분류 결과 삭제</div></div>
               <div class="srow-ctrl"><button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="resetAllData()">⚠ 초기화</button></div>
             </div>
@@ -990,6 +994,8 @@ function showApp(){
     document.getElementById('user-avatar').textContent=S.user.name[0];
   }
   updateGlobalStats();updateRightPanel();checkSetup();
+  // 이전에 연결한 Obsidian 볼트 핸들 복원(권한 프롬프트 없이 이름만)
+  idbGet(VAULT_KEY).then(h=>{if(h){S.vaultName=h.name;renderDataSection()}}).catch(()=>{});
 }
 
 async function checkSetup(){
@@ -1112,7 +1118,10 @@ async function onComplete(){
   const src=S.file?.name||'upload.pdf';S.results.forEach(r=>r._src=src);
   S.allResults.push(...S.results);S.uploadCount++;
   S.history.unshift({name:S.file?.name||'upload.pdf',count:S.results.length,time:new Date().toISOString(),model:S.model});
-  saveUserData();updateGlobalStats();updateRightPanel();setTimeout(()=>go('dashboard'),600);
+  saveUserData();updateGlobalStats();updateRightPanel();
+  // 볼트가 연결돼 있으면 분류 결과를 Obsidian에 자동 저장
+  if(S.vaultName){try{await syncObsidianVault(S.allResults)}catch{}}
+  setTimeout(()=>go('dashboard'),600);
 }
 
 function updateGlobalStats(){
@@ -1345,6 +1354,9 @@ function savePipeline(){
 function renderDataSection(){
   const sub=document.getElementById('data-count-sub');
   if(sub)sub.textContent=`${S.allResults.length}건 저장됨`;
+  const vs=document.getElementById('vault-status'),vd=document.getElementById('vault-disconnect');
+  if(vs)vs.textContent=S.vaultName?`'${S.vaultName}' 볼트 연결됨 · 분류 시 자동 저장`:'연결 안 됨 — 분류할 때마다 볼트에 자동 기록';
+  if(vd)vd.style.display=S.vaultName?'':'none';
 }
 function exportData(){
   const blob=new Blob([JSON.stringify({results:S.allResults,history:S.history,usage:S.usage},null,2)],{type:'application/json'});
@@ -1375,9 +1387,7 @@ function buildZip(files){
   const end=new Uint8Array([].concat(u32(0x06054b50),u16(0),u16(0),u16(files.length),u16(files.length),u32(cenSize),u32(offset),u16(0)));
   return new Blob([...parts,...central,end],{type:'application/zip'});
 }
-function exportObsidian(){
-  const a=S.allResults;
-  if(!a.length){alert('내보낼 분류 결과가 없습니다.');return}
+function obsidianFiles(a){
   const files=[],subjects={},topicHubs={};
   a.forEach((r,i)=>{
     const subject=r.subject||'미분류',sub=r.sub_subject||'미분류',unit=r.unit||'기타',topic=r.topic||'기타';
@@ -1428,9 +1438,53 @@ ${ev?`\n## 분류 근거\n${ev}\n`:''}`;
   // 루트 MOC
   const subLinks=Object.keys(subjects).sort().map(s=>`- [[${s}]] (${subjects[s].count})`).join('\n');
   files.push({name:`Classi/Classi.md`,text:`---\ntype: MOC\ntags: ["classi"]\n---\n\n# 🗂 Classi 지식 그래프\n\nClassi에서 분류한 문항 ${a.length}개를 Obsidian 노트로 내보냈습니다.\n\n## 과목\n${subLinks}\n\n---\n_생성: ${new Date().toLocaleString('ko-KR')}_\n`});
-  const url=URL.createObjectURL(buildZip(files));
+  return files;
+}
+function exportObsidian(){
+  const a=S.allResults;
+  if(!a.length){alert('내보낼 분류 결과가 없습니다.');return}
+  const url=URL.createObjectURL(buildZip(obsidianFiles(a)));
   const el=document.createElement('a');el.href=url;el.download=`classi-obsidian-${new Date().toISOString().split('T')[0]}.zip`;el.click();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+// ── Obsidian 볼트 직접 저장 (File System Access API) ─────────────────────────
+// 볼트 폴더를 한 번 지정하면 핸들을 IndexedDB에 보존하고, 분류가 끝날 때마다
+// 노트를 그 폴더에 자동으로 써넣는다. (Chromium 계열 브라우저 한정)
+const IDB_DB='classi-fs',IDB_STORE='kv',VAULT_KEY='obsidian-vault';
+function idb(){return new Promise((res,rej)=>{const r=indexedDB.open(IDB_DB,1);r.onupgradeneeded=()=>r.result.createObjectStore(IDB_STORE);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+async function idbSet(k,v){const db=await idb();return new Promise((res,rej)=>{const tx=db.transaction(IDB_STORE,'readwrite');tx.objectStore(IDB_STORE).put(v,k);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error)})}
+async function idbGet(k){const db=await idb();return new Promise((res,rej)=>{const tx=db.transaction(IDB_STORE,'readonly');const rq=tx.objectStore(IDB_STORE).get(k);rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error)})}
+async function getVaultHandle(){
+  try{const h=await idbGet(VAULT_KEY);if(!h)return null;
+    let p=await h.queryPermission({mode:'readwrite'});
+    if(p==='prompt')p=await h.requestPermission({mode:'readwrite'}); // 사용자 제스처 안에서만 성공
+    return p==='granted'?h:null;
+  }catch{return null}
+}
+async function connectObsidianVault(){
+  if(!window.showDirectoryPicker){alert('이 브라우저는 폴더 직접 저장을 지원하지 않습니다.\nChrome/Edge에서 사용하거나 "Obsidian 내보내기" (zip)를 이용하세요.');return}
+  try{
+    const handle=await window.showDirectoryPicker({mode:'readwrite',id:'classi-obsidian'});
+    await idbSet(VAULT_KEY,handle);S.vaultName=handle.name;renderDataSection();
+    if(S.allResults.length&&confirm(`'${handle.name}' 볼트에 연결되었습니다.\n지금까지 분류한 ${S.allResults.length}개 문항을 바로 내보낼까요?`)){
+      const ok=await syncObsidianVault(S.allResults);
+      alert(ok?'볼트에 저장했습니다.':'저장에 실패했습니다.');
+    }
+  }catch(e){if(e.name!=='AbortError')alert('볼트 연결 실패: '+e.message)}
+}
+async function disconnectObsidianVault(){await idbSet(VAULT_KEY,null);S.vaultName=null;renderDataSection()}
+async function writeVaultFile(root,path,text){
+  const parts=path.split('/'),fname=parts.pop();let dir=root;
+  for(const seg of parts)dir=await dir.getDirectoryHandle(seg,{create:true});
+  const fh=await dir.getFileHandle(fname,{create:true});
+  const w=await fh.createWritable();await w.write(text);await w.close();
+}
+async function syncObsidianVault(results){
+  if(!results||!results.length)return false;
+  const root=await getVaultHandle();if(!root)return false;
+  try{for(const f of obsidianFiles(results))await writeVaultFile(root,f.name,f.text);return true}
+  catch(e){console.warn('Obsidian 볼트 저장 실패',e);return false}
 }
 function resetAllData(){
   if(!confirm('모든 분류 결과를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.'))return;
