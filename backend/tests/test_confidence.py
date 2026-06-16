@@ -99,14 +99,15 @@ class TestLearnedCalibration(unittest.TestCase):
         C._CALIB = self._saved
 
     def _call(self):
-        # 과학탐구/물리학Ⅰ, pro 증거 1건(물리학Ⅰ 일치, 가중1.0) → 하드코딩이면 +0.05.
+        # 과학탐구/물리학Ⅰ, pro 증거 1건(물리학Ⅰ 일치, source=text 가중1.0, 증거 conf=0.9).
+        # 영어 debate #1 결함 D 교정 후: pro_score = 1.0×0.9 = 0.9 → c += 0.05×0.9 = +0.045.
         res = types.SimpleNamespace(confidence=0.8, subject="과학탐구", sub_subject="물리학Ⅰ")
         pre = {"items": [{"polarity": "pro", "targets": ["물리학Ⅰ"], "confidence": 0.9, "source": "text"}]}
         return calibrate_confidence(res, "", pre)
 
     def test_no_weights_identical_to_hardcoded(self):
         res, _, _ = self._call()
-        self.assertAlmostEqual(res.confidence, 0.85, places=6)        # 0.8 + 0.05(pro 1건)
+        self.assertAlmostEqual(res.confidence, 0.845, places=6)      # 0.8 + 0.05×(1.0×0.9)
 
     def test_gold_weights_applied(self):
         C._CALIB = {"source": "gold", "intercept": -1.0,

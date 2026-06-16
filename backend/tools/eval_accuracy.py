@@ -31,6 +31,7 @@ import sys
 import time
 import unicodedata
 from pathlib import Path
+from typing import Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core.classifier_engine import (  # noqa: E402
@@ -156,12 +157,36 @@ def run_eval(entries, classify_fn, extract_fn, max_per_file=6, log=print):
     return rows
 
 
-def score(rows) -> dict:
-    """행들을 집계: 대분류/세부과목 정확도 + 정답·오답별 평균 신뢰도(보정 품질 신호)."""
+def _calibration(confs, correct, n, bins=10) -> Tuple[Optional[float], Optional[float]]:
+    """보정 품질 = (Brier, ECE). 영어 debate #5가 명시한 'calibration error' 메트릭.
+    Brier = mean((conf - 정오)²) — 0에 가까울수록 신뢰도가 정오를 잘 맞춤.
+    ECE = Σ (|Bm|/n)·|정확도(Bm) - 평균신뢰도(Bm)| — 신뢰도구간별 과신/과소 정도."""
+    if not n:
+        return None, None
+    brier = sum((c - y) ** 2 for c, y in zip(confs, correct)) / n
+    buckets = [[] for _ in range(bins)]
+    for c, y in zip(confs, correct):
+        buckets[min(int(c * bins), bins - 1)].append((c, y))   # conf∈[0,1] → 마지막 빈 포함
+    ece = 0.0
+    for b in buckets:
+        if not b:
+            continue
+        avg_c = sum(c for c, _ in b) / len(b)
+        acc = sum(y for _, y in b) / len(b)
+        ece += (len(b) / n) * abs(acc - avg_c)
+    return brier, ece
+
+
+def score(rows, review_threshold=0.5) -> dict:
+    """행들을 집계: 대분류/세부과목 정확도 + 정답·오답별 평균 신뢰도 + 보정오차·검수부하.
+    review_threshold: 이 값 미만 신뢰도는 사람 검수로 흘러간다(review_log 플래그 기준 0.5와 일치)."""
     n = len(rows)
     subj_ok = sum(1 for r in rows if r["pred_subject"] == r["gold_subject"])
     subbed = [r for r in rows if r.get("gold_sub_subject")]
     sub_ok = sum(1 for r in subbed if r["pred_sub"] == r["gold_sub_subject"])
+    confs = [float(r["confidence"]) for r in rows]
+    correct = [1 if r["pred_subject"] == r["gold_subject"] else 0 for r in rows]
+    brier, ece = _calibration(confs, correct, n)
 
     def avg(xs):
         return sum(xs) / len(xs) if xs else None
@@ -174,6 +199,10 @@ def score(rows) -> dict:
                                  if r["pred_subject"] == r["gold_subject"]]),
         "avg_conf_wrong": avg([r["confidence"] for r in rows
                                if r["pred_subject"] != r["gold_subject"]]),
+        "brier": brier,             # 보정오차(낮을수록 좋음)
+        "ece": ece,                 # 기대보정오차(낮을수록 좋음)
+        "review_load": (sum(1 for c in confs if c < review_threshold) / n
+                        if n else None),  # 검수로 넘어갈 문항 비율(사람 부하 프록시)
     }
 
 
@@ -230,6 +259,12 @@ def main(argv=None):
         print(f"  평균 신뢰도(정답): {s['avg_conf_correct']:.2f}")
     if s["avg_conf_wrong"] is not None:
         print(f"  평균 신뢰도(오답): {s['avg_conf_wrong']:.2f}  ← 정답보다 낮아야 보정이 제값")
+    if s["brier"] is not None:
+        print(f"  보정오차 Brier:  {s['brier']:.3f}  ← 낮을수록 신뢰도가 정오를 잘 맞춤")
+    if s["ece"] is not None:
+        print(f"  보정오차 ECE:    {s['ece']:.3f}  ← 낮을수록 과신/과소 적음")
+    if s["review_load"] is not None:
+        print(f"  검수부하:        {s['review_load']:.1%}  ← 신뢰도<0.5로 사람 검수行 비율")
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as f:

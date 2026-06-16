@@ -1,5 +1,10 @@
 # autoresearch (학습용 복제)
 
+> **STATUS: frozen — no new features.** 다중 AI 토론 #5(2026-06-17)에서 만장일치로
+> "성장 중단" 결정. classi는 초점형 시험지 분류기이며, autoresearch는 격리·일회성
+> 학습 샌드박스다. 아이디어는 새 eval 하니스로 가치를 증명한 뒤에만 **단방향으로**
+> 본 제품(`core/`)에 졸업한다. 추후 별도 저장소로 적출(excise) 예정.
+
 [karpathy/autoresearch](https://github.com/karpathy/autoresearch)의 **이론**을 classi
 코드베이스에서 CPU·numpy만으로 재현한 교육용 하니스. 분류 본코드(`core/`)와 완전히
 분리된 독립 모듈이며, 어떤 분류 동작도 바꾸지 않는다.

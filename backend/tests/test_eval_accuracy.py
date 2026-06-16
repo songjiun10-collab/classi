@@ -94,6 +94,33 @@ class TestRunEvalAndScore(unittest.TestCase):
         self.assertTrue(all(r["pred_subject"] == "미분류" for r in rows))
         self.assertAlmostEqual(EV.score(rows)["subject_acc"], 1.0)
 
+    def test_calibration_and_review_load(self):
+        # 영어 debate #5 메트릭: Brier·ECE·review_load. 결정적 손계산으로 가드.
+        # 행 4개: 정답 conf 0.9, 정답 conf 0.4, 오답 conf 0.8, 오답 conf 0.3.
+        rows = [
+            {"pred_subject": "수학", "gold_subject": "수학", "pred_sub": "x",
+             "gold_sub_subject": None, "confidence": 0.9},
+            {"pred_subject": "수학", "gold_subject": "수학", "pred_sub": "x",
+             "gold_sub_subject": None, "confidence": 0.4},
+            {"pred_subject": "과학", "gold_subject": "수학", "pred_sub": "x",
+             "gold_sub_subject": None, "confidence": 0.8},
+            {"pred_subject": "영어", "gold_subject": "수학", "pred_sub": "x",
+             "gold_sub_subject": None, "confidence": 0.3},
+        ]
+        s = EV.score(rows)
+        # Brier = mean((0.9-1)²,(0.4-1)²,(0.8-0)²,(0.3-0)²) = (.01+.36+.64+.09)/4 = 0.275
+        self.assertAlmostEqual(s["brier"], 0.275)
+        # review_load = conf<0.5 인 행(0.4, 0.3) 2/4 = 0.5
+        self.assertAlmostEqual(s["review_load"], 0.5)
+        # ECE: 각 행이 서로 다른 빈(빈=10). |acc-conf| 가중합 = (|1-.9|+|1-.4|+|0-.8|+|0-.3|)/4 = 0.45
+        self.assertAlmostEqual(s["ece"], 0.45)
+
+    def test_calibration_empty_rows(self):
+        s = EV.score([])
+        self.assertIsNone(s["brier"])
+        self.assertIsNone(s["ece"])
+        self.assertIsNone(s["review_load"])
+
     def test_per_file_breakdown(self):
         entries = [{"path": self.f1, "gold_subject": "수학"}]
         rows = EV.run_eval(entries, lambda p, f: _cls("수학"),
