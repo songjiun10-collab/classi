@@ -53,6 +53,13 @@ except Exception:
     HAS_PADDLE = False
 
 from core.ontology import *
+from core import cache
+
+# façade re-exports — 외부 호출자(seed_review_gold, eval_accuracy 등)가
+# classifier_engine에서 직접 import하던 심볼을 유지해 import 수정 없이 동작.
+infer_cache_key = cache.infer_cache_key
+infer_cache_get = cache.infer_cache_get
+infer_cache_put = cache.infer_cache_put
 
 # ── OCR 백엔드 선택 ──
 # CLASSI_OCR=paddle(기본, 한국어+수식 강함) | tesseract
@@ -998,136 +1005,36 @@ def _vstack_pngs(pngs: List[bytes]) -> bytes:
 # 매번 재수행해 GPU 부하·발열이 크다. temperature=0이라 동일 입력→동일 출력이므로
 # 콘텐츠 해시를 키로 '모델 원응답(JSON)'만 영속 캐시한다. 프라이어·신뢰도 보정 등
 # 결정론적 후처리는 캐시하지 않고 매번 재적용해, 로직 변경이 즉시 반영되게 한다.
-_CACHE_ENABLED = os.environ.get("CLASSI_CACHE", "1") != "0"
-_CACHE_DB = os.environ.get("CLASSI_CACHE_DB", str(Path.home() / ".classi" / "infer_cache.db"))
-_cache_conn = None
-# RLock 필수: get/put이 락을 쥔 채 _cache_connection()을 부르고, 연결 초기화도
-# 같은 락으로 보호하므로(이중 초기화 방지) 재진입이 일어난다 — Lock이면 데드락.
-_cache_lock = threading.RLock()
-
-def _cache_connection():
-    # check-then-act를 락으로 감싼다 — 서버는 Semaphore(1)로 직렬화되지만
-    # eval/CLI 등 멀티스레드 경로에서 이중 초기화(연결 누수)가 가능했다.
-    global _cache_conn
-    with _cache_lock:
-        if _cache_conn is None:
-            Path(_CACHE_DB).parent.mkdir(parents=True, exist_ok=True)
-            _cache_conn = sqlite3.connect(_CACHE_DB, check_same_thread=False)
-            _cache_conn.execute(
-                "CREATE TABLE IF NOT EXISTS infer_cache (key TEXT PRIMARY KEY, value TEXT, ts REAL)")
-            _cache_conn.commit()
-    return _cache_conn
-
-def infer_cache_key(model: str, image_bytes: bytes, prompt: str) -> str:
-    """모델 추론을 결정하는 모든 입력(모델명·이미지·프롬프트)의 SHA-256 해시."""
-    h = hashlib.sha256()
-    h.update((model or "").encode("utf-8")); h.update(b"\x00")
-    h.update(hashlib.sha256(image_bytes or b"").digest()); h.update(b"\x00")
-    h.update((prompt or "").encode("utf-8"))
-    return h.hexdigest()
-
-def infer_cache_get(key: str) -> Optional[dict]:
-    if not _CACHE_ENABLED:
-        return None
-    try:
-        with _cache_lock:
-            cur = _cache_connection().execute(
-                "SELECT value FROM infer_cache WHERE key=?", (key,))
-            row = cur.fetchone()
-        return json.loads(row[0]) if row else None
-    except Exception:
-        return None  # 캐시 장애가 분류를 막아선 안 된다
-
-def infer_cache_put(key: str, value: dict) -> None:
-    if not _CACHE_ENABLED:
-        return
-    try:
-        with _cache_lock:
-            conn = _cache_connection()
-            conn.execute("INSERT OR REPLACE INTO infer_cache (key, value, ts) VALUES (?,?,?)",
-                         (key, json.dumps(value, ensure_ascii=False), time.time()))
-            conn.commit()
-    except Exception:
-        pass
-
-
 # ---- 추출 캐시(발열 절감 2단) ---- #
-# 같은 PDF를 재분류하면(리뷰 반복 등) 스캔본 추출 OCR을 매번 재수행한다 — 실측에서 이게
-# 유일하게 남은 발열원이었다(추론은 infer_cache로 0, 추출은 식은 기계 33s·뜨거우면 219s까지).
-# 추출은 (PDF 바이트, 검출/OCR 설정)에 결정적이므로 결과(문항 이미지+텍스트)를 통째로 캐시한다.
 # 검출/OCR 로직을 고치면 _EXTRACT_CACHE_VERSION을 올려 무효화할 것.
-# v2: 스캔 문항 텍스트 공급원 Tesseract 메모 → Paddle(rec 0.34→0.79) + _OCR_ZOOM 3.0.
-# v3: 수능 세트 문항(set_id/set_range/image_id + 세트 합성 캡처) 추가.
-# v4: 맨숫자 문제번호(완자 '07'·900제 '004') + 세트 범위 999 + 우측단 전용 좌경계 보정.
-# v5: 페이지 간 세트(국어 지문 세트 [4~9] 등 — 머리글 페이지 +2까지 멤버 매칭).
-# v6: 세트 범위 기반 누락 번호 복원(번호 OCR 미스 문항을 세트 공유 캡처로 합성 생성).
+# v2: Paddle OCR + _OCR_ZOOM 3.0. v3: 수능 세트 문항. v4: 맨숫자 문제번호.
+# v5: 페이지 간 세트. v6: 세트 범위 기반 누락 번호 복원.
 _EXTRACT_CACHE_VERSION = "6"
-_EXTRACT_CACHE_DB = os.environ.get("CLASSI_EXTRACT_CACHE_DB",
-                                   str(Path.home() / ".classi" / "extract_cache.db"))
-# 문항 PNG가 PDF당 수십 MB라 개수 아닌 총 바이트로 상한(기본 512MB), 오래된 것부터 비운다.
-_EXTRACT_CACHE_MAX_BYTES = _env_int("CLASSI_EXTRACT_CACHE_MAX_BYTES", 512 * 1024 * 1024)
-_extract_cache_conn = None
-_extract_cache_lock = threading.RLock()  # 재진입(_extract_cache_connection 초기화 보호) — Lock이면 데드락
-
-
-def _extract_cache_connection():
-    # _cache_connection과 동일한 이유로 초기화를 락으로 감싼다(이중 초기화 방지)
-    global _extract_cache_conn
-    with _extract_cache_lock:
-        if _extract_cache_conn is None:
-            Path(_EXTRACT_CACHE_DB).parent.mkdir(parents=True, exist_ok=True)
-            _extract_cache_conn = sqlite3.connect(_EXTRACT_CACHE_DB, check_same_thread=False)
-            _extract_cache_conn.execute(
-                "CREATE TABLE IF NOT EXISTS extract_cache "
-                "(key TEXT PRIMARY KEY, value BLOB, nbytes INTEGER, ts REAL)")
-            _extract_cache_conn.commit()
-    return _extract_cache_conn
-
-
-def _extract_cache_key(pdf_bytes: bytes, max_problems: int) -> str:
-    """추출 결과를 결정하는 모든 입력의 해시: 파일 내용 + 검출 줌 + OCR 백엔드/줌 + 상한 + 버전."""
-    h = hashlib.sha256()
-    for part in (_EXTRACT_CACHE_VERSION, str(_DET_ZOOM), _OCR_BACKEND, str(_OCR_ZOOM),
-                 _SCAN_TEXT, str(max_problems)):
-        h.update(part.encode("utf-8")); h.update(b"\x00")
-    h.update(hashlib.sha256(pdf_bytes).digest())
-    return h.hexdigest()
 
 
 def extract_all_problems_cached(path: Path, max_problems: int = 300) -> List[dict]:
-    """extract_all_problems의 디스크 캐시 래퍼. 캐시 장애·비-PDF는 원본 경로로 폴백.
-    pickle은 신뢰 경계 안(~/.classi 자기 캐시)이라 안전하다."""
-    import pickle
-    if not _CACHE_ENABLED or path.suffix.lower() != ".pdf":
+    """extract_all_problems의 캐시 래퍼. 스토리지·직렬화는 core.cache 위임.
+    캐시 장애·비-PDF는 원본으로 폴백. _DET_ZOOM 등 엔진 설정은 키에 바인딩."""
+    if not cache.cache_enabled() or path.suffix.lower() != ".pdf":
         return extract_all_problems(path, max_problems)
+    key = None
     try:
-        key = _extract_cache_key(path.read_bytes(), max_problems)
-        with _extract_cache_lock:
-            row = _extract_cache_connection().execute(
-                "SELECT value FROM extract_cache WHERE key=?", (key,)).fetchone()
-        if row:
-            return pickle.loads(row[0])
+        key = cache.extract_cache_key(
+            path.read_bytes(), max_problems,
+            version=_EXTRACT_CACHE_VERSION,
+            det_zoom=_DET_ZOOM, ocr_backend=_OCR_BACKEND,
+            ocr_zoom=_OCR_ZOOM, scan_text=_SCAN_TEXT,
+        )
+        hit = cache.extract_problems_get(key)
+        if hit is not None:
+            return hit
     except Exception:
         key = None  # 캐시 장애가 추출을 막아선 안 된다
     problems = extract_all_problems(path, max_problems)
     if key is None:
         return problems
     try:
-        blob = pickle.dumps(problems, protocol=4)
-        with _extract_cache_lock:
-            conn = _extract_cache_connection()
-            conn.execute("INSERT OR REPLACE INTO extract_cache (key, value, nbytes, ts) "
-                         "VALUES (?,?,?,?)", (key, blob, len(blob), time.time()))
-            # 총 바이트 상한: 가장 오래된 항목부터 제거(방금 넣은 건 ts 최신이라 보존됨)
-            while True:
-                total = conn.execute("SELECT COALESCE(SUM(nbytes),0) FROM extract_cache").fetchone()[0]
-                if total <= _EXTRACT_CACHE_MAX_BYTES:
-                    break
-                old = conn.execute("SELECT key FROM extract_cache ORDER BY ts ASC LIMIT 1").fetchone()
-                if old is None or old[0] == key:
-                    break  # 방금 항목 하나만으로 초과 — 그래도 이번 결과는 유지
-                conn.execute("DELETE FROM extract_cache WHERE key=?", (old[0],))
-            conn.commit()
+        cache.extract_problems_put(key, problems)
     except Exception:
         pass
     return problems

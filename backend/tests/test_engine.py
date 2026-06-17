@@ -7,6 +7,7 @@ import os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core import classifier_engine as E
+from core import cache as C
 from core.confidence import calibrate_confidence
 
 
@@ -619,21 +620,26 @@ class TestSocialStudiesEvidence(unittest.TestCase):
 
 
 class TestInferCache(unittest.TestCase):
-    """추론 캐시(발열·재실행 비용 절감) — 동일 입력 추론 결과 재사용."""
+    """추론 캐시(발열·재실행 비용 절감) — 동일 입력 추론 결과 재사용.
+    스토리지는 core.cache로 이전됐으므로 patch는 C(cache 모듈)를 통한다."""
     def setUp(self):
         import tempfile
         self.tmp = tempfile.mkdtemp()
-        self._old = (E._CACHE_DB, E._CACHE_ENABLED, E._cache_conn)
-        E._CACHE_DB = os.path.join(self.tmp, "c.db")
-        E._cache_conn = None
-        E._CACHE_ENABLED = True
+        self._old_db = C._CACHE_DB
+        self._old_enabled = C._CACHE_ENABLED
+        self._old_conn = C._cache_conn
+        C._CACHE_DB = os.path.join(self.tmp, "c.db")
+        C._cache_conn = None
+        C.set_cache_enabled(True)
 
     def tearDown(self):
         try:
-            if E._cache_conn: E._cache_conn.close()
+            if C._cache_conn: C._cache_conn.close()
         except Exception:
             pass
-        E._CACHE_DB, E._CACHE_ENABLED, E._cache_conn = self._old
+        C._CACHE_DB = self._old_db
+        C._cache_conn = self._old_conn
+        C.set_cache_enabled(self._old_enabled)
         import shutil
         shutil.rmtree(self.tmp, ignore_errors=True)
 
@@ -652,7 +658,7 @@ class TestInferCache(unittest.TestCase):
         self.assertEqual(got["sub_subject"], "물리학Ⅱ")
 
     def test_disabled_is_noop(self):
-        E._CACHE_ENABLED = False
+        C.set_cache_enabled(False)
         k = E.infer_cache_key("m", b"x", "p")
         E.infer_cache_put(k, {"a": 1})
         self.assertIsNone(E.infer_cache_get(k))
@@ -1326,9 +1332,10 @@ class TestExtractCache(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         os.environ["CLASSI_EXTRACT_CACHE_DB"] = os.path.join(self.tmp, "ec.db")
         # 모듈 전역을 테스트 DB로 교체(환경변수는 import 시점에 읽히므로 직접 패치)
-        self._db, self._conn = E._EXTRACT_CACHE_DB, E._extract_cache_conn
-        E._EXTRACT_CACHE_DB = os.path.join(self.tmp, "ec.db")
-        E._extract_cache_conn = None
+        # 스토리지는 core.cache로 이전됐으므로 C(cache 모듈)를 통해 패치한다.
+        self._db, self._conn = C._EXTRACT_CACHE_DB, C._extract_cache_conn
+        C._EXTRACT_CACHE_DB = os.path.join(self.tmp, "ec.db")
+        C._extract_cache_conn = None
         doc = fitz.open()
         doc.new_page().insert_text((72, 72), "1. 등가속도 운동 문제입니다. 답을 고르시오.")
         self.pdf = self.Path(self.tmp) / "t.pdf"
@@ -1336,9 +1343,9 @@ class TestExtractCache(unittest.TestCase):
 
     def tearDown(self):
         os.environ.pop("CLASSI_EXTRACT_CACHE_DB", None)
-        if E._extract_cache_conn is not None:
-            E._extract_cache_conn.close()
-        E._EXTRACT_CACHE_DB, E._extract_cache_conn = self._db, self._conn
+        if C._extract_cache_conn is not None:
+            C._extract_cache_conn.close()
+        C._EXTRACT_CACHE_DB, C._extract_cache_conn = self._db, self._conn
 
     def test_second_call_hits_cache_and_matches(self):
         first = E.extract_all_problems_cached(self.pdf)
@@ -1368,24 +1375,24 @@ class TestExtractCache(unittest.TestCase):
 
     def test_byte_cap_evicts_oldest(self):
         import fitz
-        E._extract_cache_lock.acquire(); E._extract_cache_lock.release()
-        saved = E._EXTRACT_CACHE_MAX_BYTES
-        E._EXTRACT_CACHE_MAX_BYTES = 1  # 어떤 항목도 1바이트는 못 지킴 → 직전 항목 즉시 축출
+        C._extract_cache_lock.acquire(); C._extract_cache_lock.release()
+        saved = C._EXTRACT_CACHE_MAX_BYTES
+        C._EXTRACT_CACHE_MAX_BYTES = 1  # 어떤 항목도 1바이트는 못 지킴 → 직전 항목 즉시 축출
         try:
             E.extract_all_problems_cached(self.pdf)
-            with E._extract_cache_lock:
-                n = E._extract_cache_connection().execute(
+            with C._extract_cache_lock:
+                n = C._extract_cache_connection().execute(
                     "SELECT COUNT(*) FROM extract_cache").fetchone()[0]
             self.assertEqual(n, 1)                            # 방금 넣은 것만 남고(보존 가드) 초과는 정리
             doc = fitz.open(); doc.new_page().insert_text((72, 72), "2. 다른 문제. 답을 고르시오.")
             p2 = self.Path(self.tmp) / "t2.pdf"; doc.save(p2); doc.close()
             E.extract_all_problems_cached(p2)
-            with E._extract_cache_lock:
-                rows = E._extract_cache_connection().execute(
+            with C._extract_cache_lock:
+                rows = C._extract_cache_connection().execute(
                     "SELECT COUNT(*) FROM extract_cache").fetchone()[0]
             self.assertEqual(rows, 1)                         # 옛 항목 축출, 최신만 유지
         finally:
-            E._EXTRACT_CACHE_MAX_BYTES = saved
+            C._EXTRACT_CACHE_MAX_BYTES = saved
 
 
 if __name__ == "__main__":
