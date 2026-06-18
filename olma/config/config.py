@@ -25,6 +25,15 @@ SCREENSHOT_DIR = os.environ.get("SCREENSHOT_DIR", str(BASE_DIR / "storage" / "sc
 # 사용자가 직접 사용할 페이지의 URL을 환경변수로 지정해야 함.
 KAKAO_WEB_URL = os.environ.get("KAKAO_WEB_URL", "")
 
+# --- Web AI (브라우저로 웹 AI 채팅을 열어 묻기. 공식 API 미사용, 카톡과 동일한 패턴) ---
+# 어떤 웹 AI를 쓸지/입력창·전송·응답 영역 selector는 사이트마다 달라 임의로 추측하지 않음.
+# 사용자가 직접 환경변수로 지정해야 동작한다(미설정 시 명확한 오류).
+WEB_AI_URL = os.environ.get("WEB_AI_URL", "")
+WEB_AI_INPUT_SELECTOR = os.environ.get("WEB_AI_INPUT_SELECTOR", "")  # 프롬프트 입력창 CSS 선택자
+WEB_AI_SUBMIT_SELECTOR = os.environ.get("WEB_AI_SUBMIT_SELECTOR", "")  # 전송 버튼(비우면 Enter)
+WEB_AI_RESPONSE_SELECTOR = os.environ.get("WEB_AI_RESPONSE_SELECTOR", "body")  # 응답 영역
+WEB_AI_WAIT_MS = int(os.environ.get("WEB_AI_WAIT_MS", "8000"))  # 응답 생성 대기(ms)
+
 # --- OCR ---
 TESSERACT_LANG = os.environ.get("TESSERACT_LANG", "kor+eng")
 

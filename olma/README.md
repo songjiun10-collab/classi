@@ -54,6 +54,11 @@ python main.py
 | `BROWSER_HEADLESS` | `false` | 브라우저 헤드리스 여부 |
 | `BROWSER_USER_DATA_DIR` | `storage/browser_profile` | 로그인 세션 유지를 위한 영구 프로필 경로 |
 | `KAKAO_WEB_URL` | (없음) | 알림 분석 기능에서 열 메신저 웹 페이지 URL. 직접 지정 필요 |
+| `WEB_AI_URL` | (없음) | `web_ai_ask`에서 열 웹 AI 채팅 페이지 URL. 직접 지정 필요 |
+| `WEB_AI_INPUT_SELECTOR` | (없음) | 웹 AI 프롬프트 입력창 CSS 선택자 |
+| `WEB_AI_SUBMIT_SELECTOR` | (없음) | 전송 버튼 선택자 (비우면 Enter 키 입력) |
+| `WEB_AI_RESPONSE_SELECTOR` | `body` | 응답 텍스트를 읽을 영역 선택자 |
+| `WEB_AI_WAIT_MS` | `8000` | 프롬프트 전송 후 응답 생성 대기(ms) |
 | `TESSERACT_LANG` | `kor+eng` | OCR 인식 언어 |
 | `RETRY_COUNT` | `2` | step 실패 시 추가 재시도 횟수 (1~3 권장) |
 | `RETRY_BACKOFF` | `0.5` | 재시도 사이 대기(초), 시도마다 2배 증가 |
@@ -66,6 +71,15 @@ python main.py
 ## Planner 출력 검증 & 폴백
 
 Planner가 만드는 계획(Plan)은 `core/schema.py`의 Pydantic 스키마(`Plan`/`Step`, `schema_version` 포함)로 검증되며, Ollama 호출 시 이 스키마를 `format`으로 강제해 JSON 파싱 실패를 원천적으로 줄인다. 검증 실패 시 오류 내용을 포함해 1회 자기-교정 재시도 → 개별 step 부분 복구 → 그래도 복구할 step이 없으면 **규칙 기반 폴백 플래너**(`core/fallback_planner.py`)가 URL/키워드로 step을 구성한다(LLM을 쓰지 않으므로 Ollama가 죽어도 동작). step은 `depends_on`(이전 step의 인덱스)과 `{{result}}` 토큰으로 이전 결과를 참조할 수 있다. 외부에서 들어오는 텍스트(사용자 입력, 메시지, 이전 step 결과, 최근 작업 맥락)는 모두 구분자로 감싸 프롬프트 인젝션을 데이터로만 취급하도록 한다.
+
+## 웹 AI 호출 (`web_ai_ask`, 브라우저 경유)
+
+외부 클라우드 AI **API는 쓰지 않되**, 카톡과 동일한 방식으로 브라우저를 띄워 웹 AI 채팅(예: 사내 LLM 포털 등 사용자가 접근 권한을 가진 페이지)에 프롬프트를 입력하고 응답을 읽어 온다. "모든 추론은 로컬"이라는 기본 원칙과는 절충점이며, 명시적으로 켜야 동작한다.
+
+- 어떤 웹 AI를 쓸지, 입력창/전송/응답 영역 selector는 사이트마다 다르므로 **코드에 박지 않고** `WEB_AI_*` 환경변수로 사용자가 직접 지정한다(미설정 시 명확한 오류). URL을 임의로 추측하지 않는다.
+- 로그인 벽이 있으면 `BROWSER_HEADLESS=false`로 최초 1회 직접 로그인 → 영구 프로필에 세션 유지(카톡과 동일).
+- 응답은 스트리밍이라 `WEB_AI_WAIT_MS`만큼 기다린 뒤 텍스트를 읽고, DOM이 비면 OCR로 폴백한다. 웹 AI가 실패하면 라우터 폴백으로 로컬 Ollama가 "아는 선에서" 받는다.
+- 대상 서비스의 이용약관에 자동화 제한이 있을 수 있으니 사용은 사용자 책임이다.
 
 ## 테스트
 

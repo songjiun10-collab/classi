@@ -13,6 +13,11 @@ from config.config import (
     RETRY_BACKOFF,
     RETRY_COUNT,
     STEP_TIMEOUT,
+    WEB_AI_INPUT_SELECTOR,
+    WEB_AI_RESPONSE_SELECTOR,
+    WEB_AI_SUBMIT_SELECTOR,
+    WEB_AI_URL,
+    WEB_AI_WAIT_MS,
 )
 from core import notifier, router
 from core.logger import get_logger
@@ -77,6 +82,15 @@ def _run_browser(step: dict, browser: Browser) -> str:
         return browser.get_text()
     if action == "browser_screenshot":
         return browser.screenshot()
+    if action == "web_ai_ask":
+        return browser.ask_web_ai(
+            arg,
+            WEB_AI_URL,
+            WEB_AI_INPUT_SELECTOR,
+            WEB_AI_SUBMIT_SELECTOR,
+            WEB_AI_RESPONSE_SELECTOR,
+            WEB_AI_WAIT_MS,
+        )
 
     raise ValueError(f"알 수 없는 browser action: {action}")
 

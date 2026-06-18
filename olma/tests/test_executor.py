@@ -110,6 +110,19 @@ def test_execute_steps_browser_failure_falls_back_to_ollama():
     mock_browser.debug_screenshot.assert_called()
 
 
+def test_execute_steps_dispatches_web_ai_ask_to_browser():
+    mock_browser = MagicMock()
+    mock_browser.ask_web_ai.return_value = "웹 AI 답변"
+
+    steps = [{"action": "web_ai_ask", "input": "안녕?", "depends_on": None}]
+    with patch("executor.executor.Browser", return_value=mock_browser):
+        results = execute_steps(steps)
+
+    assert results[0]["status"] == "ok"
+    assert results[0]["result"] == "웹 AI 답변"
+    assert mock_browser.ask_web_ai.call_args.args[0] == "안녕?"
+
+
 def test_execute_steps_records_failed_when_target_and_fallback_both_fail():
     mock_browser = MagicMock()
     mock_browser.search.side_effect = RuntimeError("브라우저 죽음")

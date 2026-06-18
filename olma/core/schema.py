@@ -21,6 +21,7 @@ class ActionType(str, Enum):
     BROWSER_TYPE = "browser_type"
     BROWSER_GET_TEXT = "browser_get_text"
     BROWSER_SCREENSHOT = "browser_screenshot"
+    WEB_AI_ASK = "web_ai_ask"
     NOTIFICATION_CHECK = "notification_check"
 
 
@@ -33,6 +34,7 @@ ACTION_DESCRIPTIONS: dict[ActionType, str] = {
     ActionType.BROWSER_TYPE: "특정 요소에 텍스트 입력 (input은 \"선택자|||텍스트\")",
     ActionType.BROWSER_GET_TEXT: "현재 페이지의 텍스트 추출",
     ActionType.BROWSER_SCREENSHOT: "현재 페이지 스크린샷 저장",
+    ActionType.WEB_AI_ASK: "브라우저로 웹 AI 채팅을 열어 질문하고 답을 읽음 (input은 보낼 프롬프트). 사용자가 '챗GPT/웹 AI에게 물어봐'처럼 외부 웹 AI 사용을 명시적으로 요청했을 때만",
     ActionType.NOTIFICATION_CHECK: "메시지(카톡 등) 읽고 분류/추천 (사용자가 메시지 확인을 명시적으로 요청했을 때만)",
 }
 

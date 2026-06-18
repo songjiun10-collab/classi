@@ -113,3 +113,33 @@ class Browser:
     def search(self, query: str) -> str:
         self.open(f"https://www.google.com/search?q={quote_plus(query)}")
         return self.get_text()
+
+    def ask_web_ai(
+        self,
+        prompt: str,
+        url: str,
+        input_selector: str,
+        submit_selector: str = "",
+        response_selector: str = "body",
+        wait_ms: int = 8000,
+    ) -> str:
+        """웹 AI 채팅 페이지를 열어 프롬프트를 보내고 응답 텍스트를 읽어 온다.
+
+        URL/selector는 사이트마다 달라 호출자가 반드시 넘겨야 한다(코드에 박지 않음).
+        응답이 스트리밍이라 정확한 완료 감지 대신 wait_ms만큼 기다린 뒤 텍스트를 읽고,
+        DOM이 비면 get_text의 OCR 폴백이 받는다."""
+        if not url or not input_selector:
+            raise ValueError(
+                "WEB_AI_URL / WEB_AI_INPUT_SELECTOR가 설정되지 않았습니다. "
+                "사용할 웹 AI의 페이지 URL과 입력창/응답 selector를 환경변수로 지정하세요."
+            )
+        self.open(url)
+        sel = self._first_visible([input_selector])
+        self._page.fill(sel, prompt, timeout=self.timeout)
+        if submit_selector:
+            self.click(submit_selector)
+        else:
+            self._page.press(sel, "Enter")
+        # 응답 생성 대기(고정). 더 정교한 완료 감지는 V0.2 범위에서 의도적으로 제외.
+        self._page.wait_for_timeout(wait_ms)
+        return self.get_text(response_selector)

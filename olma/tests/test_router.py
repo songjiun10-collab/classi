@@ -21,6 +21,7 @@ def test_every_action_type_maps_to_exactly_one_target():
         ("browser_type", "browser"),
         ("browser_get_text", "browser"),
         ("browser_screenshot", "browser"),
+        ("web_ai_ask", "browser"),
         ("notification_check", "notifier"),
     ],
 )

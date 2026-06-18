@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from tools.browser import Browser, _as_selector_list
@@ -70,3 +71,43 @@ def test_debug_screenshot_never_raises():
     b._page.screenshot.side_effect = RuntimeError("스크린샷 실패")
     # 디버그 스크린샷은 실패해도 None을 돌려줄 뿐 예외를 던지지 않아야 한다.
     assert b.debug_screenshot("test") is None
+
+
+def test_ask_web_ai_requires_url_and_selector():
+    b = _browser_with_mock_page()
+    with pytest.raises(ValueError):
+        b.ask_web_ai("안녕", url="", input_selector="")
+
+
+def test_ask_web_ai_fills_submits_and_reads_response():
+    b = _browser_with_mock_page()
+    b._page.wait_for_selector.return_value = None
+    b._page.inner_text.return_value = "AI의 답변입니다"
+
+    text = b.ask_web_ai(
+        "파이썬이 뭐야?",
+        url="https://example-ai.test/chat",
+        input_selector="#prompt",
+        submit_selector="#send",
+        response_selector="#answer",
+    )
+
+    assert text == "AI의 답변입니다"
+    b._page.goto.assert_called_once()
+    # 프롬프트가 입력창에 채워졌는지
+    fill_args = b._page.fill.call_args.args
+    assert fill_args[0] == "#prompt"
+    assert fill_args[1] == "파이썬이 뭐야?"
+    # 전송 버튼 클릭
+    b._page.click.assert_called_once()
+
+
+def test_ask_web_ai_presses_enter_when_no_submit_selector():
+    b = _browser_with_mock_page()
+    b._page.wait_for_selector.return_value = None
+    b._page.inner_text.return_value = "답변"
+
+    b.ask_web_ai("질문", url="https://x.test", input_selector="#p")
+
+    b._page.press.assert_called_once()
+    assert b._page.press.call_args.args[1] == "Enter"

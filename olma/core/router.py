@@ -15,6 +15,7 @@ _BROWSER_ACTIONS = {
     ActionType.BROWSER_TYPE,
     ActionType.BROWSER_GET_TEXT,
     ActionType.BROWSER_SCREENSHOT,
+    ActionType.WEB_AI_ASK,
 }
 _NOTIFIER_ACTIONS = {ActionType.NOTIFICATION_CHECK}
 
@@ -32,6 +33,7 @@ _INPUT_REQUIRED = {
     ActionType.BROWSER_SEARCH,
     ActionType.BROWSER_CLICK,
     ActionType.BROWSER_TYPE,
+    ActionType.WEB_AI_ASK,
     ActionType.LLM,
 }
 
