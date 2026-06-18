@@ -1,8 +1,31 @@
 """step list를 순차 실행하고 결과를 모은다. 실패 시 step당 1회 재시도."""
-from config.config import RETRY_COUNT
+from config.config import OLLAMA_TEMPERATURE_DEFAULT, RETRY_COUNT
 from core import notifier, router
+from core.schema import EXTERNAL_DATA_BEGIN, EXTERNAL_DATA_END, MAX_INPUT_CHARS
 from llm import ollama_client
 from tools.browser import Browser
+
+_RESULT_TOKEN = "{{result}}"
+
+
+def _wrap_external(text: str) -> str:
+    text = text[:MAX_INPUT_CHARS]
+    return f"{EXTERNAL_DATA_BEGIN}\n{text}\n{EXTERNAL_DATA_END}"
+
+
+def _substitute_dependency(step: dict, results_by_index: dict) -> dict:
+    depends_on = step.get("depends_on")
+    text = step.get("input", "")
+    if depends_on is None or _RESULT_TOKEN not in text:
+        return step
+
+    prior = results_by_index.get(depends_on)
+    if prior is None:
+        return step
+
+    step = dict(step)
+    step["input"] = text.replace(_RESULT_TOKEN, _wrap_external(str(prior["result"])))
+    return step
 
 
 def _run_ollama(step: dict) -> str:
@@ -12,7 +35,7 @@ def _run_ollama(step: dict) -> str:
         prompt = f"다음 내용을 한국어로 간결하게 요약해라:\n\n{text}"
     else:
         prompt = text
-    return ollama_client.generate(prompt)
+    return ollama_client.generate(prompt, temperature=OLLAMA_TEMPERATURE_DEFAULT)
 
 
 def _run_browser(step: dict, browser: Browser) -> str:
@@ -41,6 +64,7 @@ def _run_browser(step: dict, browser: Browser) -> str:
 
 def execute_steps(steps: list) -> list:
     results = []
+    results_by_index = {}
     browser = None
     needs_browser = any(router.route(s) in ("browser", "notifier") for s in steps)
 
@@ -49,7 +73,8 @@ def execute_steps(steps: list) -> list:
             browser = Browser()
             browser.__enter__()
 
-        for step in steps:
+        for i, raw_step in enumerate(steps):
+            step = _substitute_dependency(raw_step, results_by_index)
             target = router.route(step)
             attempts = RETRY_COUNT + 1
             last_error = None
@@ -69,13 +94,13 @@ def execute_steps(steps: list) -> list:
                 except Exception as exc:
                     last_error = exc
 
-            results.append(
-                {
-                    "step": step,
-                    "result": result if status == "ok" else f"error: {last_error}",
-                    "status": status,
-                }
-            )
+            record = {
+                "step": step,
+                "result": result if status == "ok" else f"error: {last_error}",
+                "status": status,
+            }
+            results.append(record)
+            results_by_index[i] = record
     finally:
         if browser:
             browser.__exit__(None, None, None)

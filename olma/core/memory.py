@@ -4,6 +4,7 @@ import os
 from datetime import datetime, timezone
 
 from config.config import MEMORY_PATH
+from core.schema import SCHEMA_VERSION
 
 
 def _load_raw() -> list:
@@ -21,6 +22,7 @@ def save(task: str, result: str) -> None:
             "task": task,
             "result": result,
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "schema_version": SCHEMA_VERSION,
         }
     )
     os.makedirs(os.path.dirname(MEMORY_PATH), exist_ok=True)

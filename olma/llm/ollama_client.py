@@ -4,9 +4,31 @@ import requests
 from config.config import OLLAMA_HOST, OLLAMA_MODEL, OLLAMA_TIMEOUT
 
 
-def generate(prompt: str, model: str = OLLAMA_MODEL, timeout: int = OLLAMA_TIMEOUT) -> str:
-    """Ollama에 단일 프롬프트를 보내고 생성된 텍스트를 반환한다. 실패 시 1회 재시도."""
+def generate(
+    prompt: str,
+    model: str = OLLAMA_MODEL,
+    timeout: int = OLLAMA_TIMEOUT,
+    format: dict | str | None = None,
+    temperature: float | None = None,
+    seed: int | None = None,
+) -> str:
+    """Ollama에 단일 프롬프트를 보내고 생성된 텍스트를 반환한다. 실패 시 1회 재시도.
+
+    format을 주면 해당 JSON 스키마로 출력이 강제된다(grammar-constrained decoding).
+    temperature/seed를 주면 결정론적 출력을 위한 옵션으로 전달된다.
+    """
     payload = {"model": model, "prompt": prompt, "stream": False}
+    if format is not None:
+        payload["format"] = format
+
+    options = {}
+    if temperature is not None:
+        options["temperature"] = temperature
+    if seed is not None:
+        options["seed"] = seed
+    if options:
+        payload["options"] = options
+
     url = f"{OLLAMA_HOST}/api/generate"
 
     last_error = None

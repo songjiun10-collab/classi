@@ -44,6 +44,21 @@ python main.py
 | `KAKAO_WEB_URL` | (없음) | 알림 분석 기능에서 열 메신저 웹 페이지 URL. 직접 지정 필요 |
 | `TESSERACT_LANG` | `kor+eng` | OCR 인식 언어 |
 | `RETRY_COUNT` | `1` | step 실패 시 재시도 횟수 |
+| `OLLAMA_TEMPERATURE_DEFAULT` | `0.7` | Planner/분류 외 일반 LLM 호출(`llm`/`summarize`)의 기본 temperature |
+
+## Planner 출력 검증
+
+Planner가 만드는 계획(Plan)은 `core/schema.py`의 Pydantic 스키마(`Plan`/`Step`, `schema_version` 포함)로 검증되며, Ollama 호출 시 이 스키마를 `format`으로 강제해 JSON 파싱 실패를 원천적으로 줄인다. 검증에 실패하면 오류 내용을 포함해 1회 자기-교정 재시도를 하고, 그래도 실패하면 개별 step만 부분 복구하며, 복구할 step이 전혀 없을 때만 단일 `llm` step으로 폴백한다. step은 `depends_on`(이전 step의 인덱스)과 `{{result}}` 토큰으로 이전 결과를 참조할 수 있다. 외부에서 들어오는 텍스트(사용자 입력, 메시지, 이전 step 결과)는 모두 구분자로 감싸 프롬프트 인젝션을 데이터로만 취급하도록 한다.
+
+## 테스트
+
+```bash
+cd olma
+pip install -r requirements.txt pytest
+pytest
+```
+
+Ollama 서버·Playwright 브라우저 없이도 동작하도록 전부 모킹 기반으로 작성되어 있다.
 
 ## 알림(Notification) 분석 기능 사용법
 

@@ -2,3 +2,4 @@ requests
 playwright
 pytesseract
 Pillow
+pydantic>=2.0,<3
