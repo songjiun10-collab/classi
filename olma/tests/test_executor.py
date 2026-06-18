@@ -76,3 +76,52 @@ def test_execute_steps_multistep_with_browser_and_dependency():
     assert [r["status"] for r in results] == ["ok", "ok", "ok"]
     assert results[-1]["result"] == "요약 결과"
     mock_browser.open.assert_called_once_with("https://example.com")
+
+
+def test_execute_steps_retries_then_succeeds():
+    steps = [{"action": "llm", "input": "hi", "depends_on": None}]
+    with patch("executor.executor.time.sleep"), patch(
+        "executor.executor.ollama_client.generate",
+        side_effect=[RuntimeError("일시 실패"), "두번째에 성공"],
+    ) as gen:
+        results = execute_steps(steps)
+
+    assert results[0]["status"] == "ok"
+    assert results[0]["attempts"] == 2
+    assert results[0]["result"] == "두번째에 성공"
+    assert gen.call_count == 2
+
+
+def test_execute_steps_browser_failure_falls_back_to_ollama():
+    mock_browser = MagicMock()
+    mock_browser.search.side_effect = RuntimeError("브라우저 죽음")
+
+    steps = [{"action": "browser_search", "input": "뉴스", "depends_on": None}]
+    with patch("executor.executor.time.sleep"), patch(
+        "executor.executor.Browser", return_value=mock_browser
+    ), patch(
+        "executor.executor.ollama_client.generate", return_value="아는 선에서의 답변"
+    ) as gen:
+        results = execute_steps(steps)
+
+    assert results[0]["status"] == "fallback"
+    assert results[0]["result"] == "아는 선에서의 답변"
+    assert gen.call_count == 1
+    mock_browser.debug_screenshot.assert_called()
+
+
+def test_execute_steps_records_failed_when_target_and_fallback_both_fail():
+    mock_browser = MagicMock()
+    mock_browser.search.side_effect = RuntimeError("브라우저 죽음")
+
+    steps = [{"action": "browser_search", "input": "뉴스", "depends_on": None}]
+    with patch("executor.executor.time.sleep"), patch(
+        "executor.executor.Browser", return_value=mock_browser
+    ), patch(
+        "executor.executor.ollama_client.generate", side_effect=RuntimeError("LLM도 죽음")
+    ):
+        results = execute_steps(steps)
+
+    assert results[0]["status"] == "failed"
+    assert "error:" in results[0]["result"]
+    assert results[0]["error"] is not None

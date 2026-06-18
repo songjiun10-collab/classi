@@ -29,4 +29,11 @@ KAKAO_WEB_URL = os.environ.get("KAKAO_WEB_URL", "")
 TESSERACT_LANG = os.environ.get("TESSERACT_LANG", "kor+eng")
 
 # --- Executor ---
-RETRY_COUNT = int(os.environ.get("RETRY_COUNT", "1"))
+RETRY_COUNT = int(os.environ.get("RETRY_COUNT", "2"))  # step당 추가 재시도 횟수 (1~3 권장)
+RETRY_BACKOFF = float(os.environ.get("RETRY_BACKOFF", "0.5"))  # 재시도 사이 대기(초), 시도마다 *2
+STEP_TIMEOUT = int(os.environ.get("STEP_TIMEOUT", "60"))  # step 1회 실행 제한시간(초)
+BROWSER_TIMEOUT = int(os.environ.get("BROWSER_TIMEOUT", "15000"))  # Playwright 동작 제한시간(ms)
+
+# --- Logging ---
+LOG_PATH = os.environ.get("LOG_PATH", str(BASE_DIR / "storage" / "olma.log"))
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")

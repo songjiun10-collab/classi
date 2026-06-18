@@ -1,16 +1,37 @@
-"""Playwright 기반 브라우저 엔진 (sync API). 카톡 등 로그인 세션 유지를 위해 영구 프로필 사용."""
+"""Playwright 기반 브라우저 엔진 (sync API). 카톡 등 로그인 세션 유지를 위해 영구 프로필 사용.
+
+V0.2 안정화: 명시적 wait 전략, selector fallback(여러 후보 시도),
+DOM 텍스트가 비면 OCR로 폴백, 동작 실패 시 디버그 스크린샷 저장."""
 import os
+import time
 from urllib.parse import quote_plus
 
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
-from config.config import BROWSER_HEADLESS, BROWSER_USER_DATA_DIR, SCREENSHOT_DIR
+from config.config import BROWSER_HEADLESS, BROWSER_TIMEOUT, BROWSER_USER_DATA_DIR, SCREENSHOT_DIR
+from core.logger import get_logger
+from tools import ocr
+
+log = get_logger("browser")
+
+
+def _as_selector_list(selector) -> list:
+    if isinstance(selector, (list, tuple)):
+        return [s for s in selector if s]
+    return [selector]
 
 
 class Browser:
-    def __init__(self, headless: bool = BROWSER_HEADLESS, user_data_dir: str = BROWSER_USER_DATA_DIR):
+    def __init__(
+        self,
+        headless: bool = BROWSER_HEADLESS,
+        user_data_dir: str = BROWSER_USER_DATA_DIR,
+        timeout: int = BROWSER_TIMEOUT,
+    ):
         self.headless = headless
         self.user_data_dir = user_data_dir
+        self.timeout = timeout
         self._playwright = None
         self._context = None
         self._page = None
@@ -21,6 +42,7 @@ class Browser:
         self._context = self._playwright.chromium.launch_persistent_context(
             self.user_data_dir, headless=self.headless
         )
+        self._context.set_default_timeout(self.timeout)
         self._page = self._context.new_page()
         return self
 
@@ -31,22 +53,62 @@ class Browser:
             self._playwright.stop()
 
     def open(self, url: str) -> None:
-        self._page.goto(url)
+        # 네트워크가 끝나길 무한정 기다리지 않도록 DOM 로드 기준으로 대기한다.
+        self._page.goto(url, wait_until="domcontentloaded", timeout=self.timeout)
 
-    def click(self, selector: str) -> None:
-        self._page.click(selector)
+    def _first_visible(self, selectors: list):
+        """후보 selector들을 순서대로 시도해 먼저 나타나는 요소의 selector를 돌려준다."""
+        last_error = None
+        for sel in selectors:
+            try:
+                self._page.wait_for_selector(sel, state="visible", timeout=self.timeout)
+                return sel
+            except PlaywrightTimeoutError as exc:
+                last_error = exc
+                log.debug("selector 미발견, 다음 후보 시도: %s", sel)
+        raise PlaywrightTimeoutError(
+            f"후보 selector 중 표시되는 요소를 찾지 못함: {selectors} ({last_error})"
+        )
 
-    def type(self, selector: str, text: str) -> None:
-        self._page.fill(selector, text)
+    def click(self, selector) -> None:
+        sel = self._first_visible(_as_selector_list(selector))
+        self._page.click(sel, timeout=self.timeout)
+
+    def type(self, selector, text: str) -> None:
+        sel = self._first_visible(_as_selector_list(selector))
+        self._page.fill(sel, text, timeout=self.timeout)
 
     def get_text(self, selector: str = "body") -> str:
-        return self._page.inner_text(selector)
+        """DOM 텍스트를 우선 추출하고, 비어 있거나 실패하면 스크린샷+OCR로 폴백한다."""
+        try:
+            text = self._page.inner_text(selector, timeout=self.timeout).strip()
+            if text:
+                return text
+            log.info("DOM 텍스트가 비어 OCR 폴백 수행")
+        except PlaywrightTimeoutError:
+            log.warning("inner_text 타임아웃, OCR 폴백 수행")
+
+        path = self.screenshot()
+        return ocr.image_to_text(path)
 
     def screenshot(self, path: str = None) -> str:
         os.makedirs(SCREENSHOT_DIR, exist_ok=True)
         path = path or os.path.join(SCREENSHOT_DIR, "capture.png")
         self._page.screenshot(path=path)
         return path
+
+    def debug_screenshot(self, label: str = "error") -> str | None:
+        """동작 실패 시 디버깅용 스크린샷. 실패해도 본 흐름을 막지 않는다."""
+        try:
+            os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+            safe = "".join(c if c.isalnum() else "_" for c in label)[:40]
+            path = os.path.join(SCREENSHOT_DIR, f"debug_{safe}_{int(time.time())}.png")
+            self._page.screenshot(path=path)
+            log.info("디버그 스크린샷 저장: %s", path)
+            return path
+        except Exception as exc:
+            log.debug("디버그 스크린샷 실패: %s", exc)
+            return None
 
     def search(self, query: str) -> str:
         self.open(f"https://www.google.com/search?q={quote_plus(query)}")
