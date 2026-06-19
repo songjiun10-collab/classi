@@ -655,7 +655,7 @@ input,select{font:inherit;color:inherit;outline:none;letter-spacing:inherit}
     <div class="stat-strip">
       <div class="stat-cell"><div class="k">Classified</div><div class="v" id="hs-total">0<small>개</small></div></div>
       <div class="stat-cell"><div class="k">Subjects</div><div class="v" id="hs-subjects">0<small>개</small></div></div>
-      <div class="stat-cell"><div class="k">Accuracy</div><div class="v" id="hs-conf">—<small>%</small></div></div>
+      <div class="stat-cell"><div class="k">Avg Confidence</div><div class="v" id="hs-conf">—<small>%</small></div></div>
       <div class="stat-cell"><div class="k">Uploads</div><div class="v" id="hs-uploads">0<small>회</small></div></div>
     </div>
   </section>
@@ -665,7 +665,7 @@ input,select{font:inherit;color:inherit;outline:none;letter-spacing:inherit}
   <div class="dash-header"><div class="overline" style="margin-bottom:6px">Analysis Results</div><h1 class="headline">Dashboard</h1></div>
   <div class="dash-stats">
     <div class="dash-stat"><div class="pulse"></div><div class="label">Total</div><div class="value" id="ds-total">0</div><div class="sub">분류 완료</div></div>
-    <div class="dash-stat"><div class="label">Accuracy</div><div class="value" id="ds-conf">—</div><div class="sub">전체 평균</div></div>
+    <div class="dash-stat"><div class="label">Avg Confidence</div><div class="value" id="ds-conf">—</div><div class="sub">전체 평균</div></div>
     <div class="dash-stat"><div class="label">Subjects</div><div class="value" id="ds-subj">0</div><div class="sub">고유 과목</div></div>
     <div class="dash-stat"><div class="label">Last Run</div><div class="value" id="ds-last" style="font-size:14px">—</div><div class="sub">최근 업데이트</div></div>
   </div>
@@ -709,12 +709,12 @@ input,select{font:inherit;color:inherit;outline:none;letter-spacing:inherit}
   <div style="margin-bottom:24px"><div class="overline" style="margin-bottom:6px">Analytics</div><h1 class="headline">분석 현황</h1></div>
   <div class="dash-stats" style="margin-bottom:24px">
     <div class="dash-stat"><div class="label">Total</div><div class="value" id="st-total">0</div></div>
-    <div class="dash-stat"><div class="label">Accuracy</div><div class="value" id="st-conf">—</div></div>
+    <div class="dash-stat"><div class="label">Avg Confidence</div><div class="value" id="st-conf">—</div></div>
     <div class="dash-stat"><div class="label">Subjects</div><div class="value" id="st-subj">0</div></div>
     <div class="dash-stat"><div class="label">Uploads</div><div class="value" id="st-uploads">0</div></div>
   </div>
   <div class="stats-grid">
-    <div class="card"><div class="card-head"><div><div class="card-title">Confidence</div><div class="card-tag">전체 평균</div></div></div><div class="gauge-wrap"><svg id="gauge-svg" viewBox="0 0 200 200"><defs><linearGradient id="gauge-grad" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#004f34"/><stop offset="100%" stop-color="#00754a"/></linearGradient></defs><circle class="gauge-track" cx="100" cy="100" r="72"/><circle class="gauge-arc" id="gauge-arc" cx="100" cy="100" r="72"/><text class="gauge-val" x="100" y="106" text-anchor="middle" id="gauge-text">0%</text><text class="gauge-unit" x="100" y="122" text-anchor="middle">accuracy</text></svg></div></div>
+    <div class="card"><div class="card-head"><div><div class="card-title">Confidence</div><div class="card-tag">전체 평균</div></div></div><div class="gauge-wrap"><svg id="gauge-svg" viewBox="0 0 200 200"><defs><linearGradient id="gauge-grad" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#004f34"/><stop offset="100%" stop-color="#00754a"/></linearGradient></defs><circle class="gauge-track" cx="100" cy="100" r="72"/><circle class="gauge-arc" id="gauge-arc" cx="100" cy="100" r="72"/><text class="gauge-val" x="100" y="106" text-anchor="middle" id="gauge-text">0%</text><text class="gauge-unit" x="100" y="122" text-anchor="middle">confidence</text></svg></div></div>
     <div class="card"><div class="card-head"><div><div class="card-title">Difficulty</div><div class="card-tag">상 · 중 · 하</div></div></div><div class="bar-list" id="diff-bars"><div class="empty-state"><p>데이터 없음</p></div></div></div>
   </div>
   <div class="card" style="margin-top:14px"><div class="card-head"><div><div class="card-title">Subjects</div><div class="card-tag">문항 수 기준</div></div></div><div class="bar-list" id="subject-bars"><div class="empty-state"><p>데이터 없음</p></div></div></div>
@@ -908,7 +908,10 @@ const CLOUD_PROVIDERS=[
   {id:'google',name:'Gemini (Google)',models:['gemini-2.5-pro','gemini-2.5-flash','gemini-2.0-flash']},
 ];
 const COLORS={'과학탐구':'#cc785c','수학':'#a9583e','국어':'#5db8a6','사회탐구':'#006241','영어':'#cba258','한국사':'#c64545','물리학Ⅱ':'#cc785c','물리학Ⅰ':'#a9583e','화학Ⅱ':'#5db8a6','화학Ⅰ':'#006241','생명과학Ⅱ':'#8f4a33','생명과학Ⅰ':'#00754a','지구과학Ⅰ':'#cc785c','지구과학Ⅱ':'#a9583e','미적분':'#006241','수학Ⅱ':'#a9583e','수학Ⅰ':'#cc785c','확률과통계':'#5db8a6','기하':'#8f4a33','문학':'#c64545','언어와매체':'#cba258','화법과작문':'#00754a'};
-const ACCOUNTS={'admin@classi.ai':{pw:'Cl@ss1!Adm#2026',name:'관리자',role:'admin'}};
+// 데모용 클라이언트 전용 게이트: 백엔드(server.py)에 인증/인가가 전혀 없어 실제 보안 경계가 아님.
+// role은 표시(이름/아바타)에만 쓰이고 어떤 기능도 분기하지 않으므로, 실제 비밀번호처럼 보이는
+// 값 대신 데모임이 명확한 자리표시자를 쓴다.
+const ACCOUNTS={'admin@classi.ai':{pw:'demo-admin',name:'관리자',role:'admin'}};
 function esc(v){return String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))}
 function readJson(key,fallback){
   try{return JSON.parse(localStorage.getItem(key)??JSON.stringify(fallback))}
