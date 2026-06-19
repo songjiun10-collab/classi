@@ -7,14 +7,23 @@ from fastapi.testclient import TestClient
 
 
 @pytest.fixture(autouse=True)
-def _isolated_task_store(tmp_path, monkeypatch):
+def _isolated_storage(tmp_path, monkeypatch):
     """TaskQueue()는 생성 시 task_store에서 히스토리를 복원하므로, 서버를 새로
-    띄우는 테스트마다 실제 storage/tasks.db 대신 테스트별 임시 DB를 쓰게 한다."""
+    띄우는 테스트마다 실제 storage/tasks.db 대신 테스트별 임시 DB를 쓰게 한다.
+
+    memory도 함께 격리한다: 일부 테스트는 task 제출 후 백그라운드 워커가 끝나기
+    전에 `with patch(...)` 블록을 빠져나가므로(예: 응답만 확인하고 완료를 기다리지
+    않는 테스트), 패치가 워커보다 먼저 풀려 워커가 실제 core.memory를 호출하는
+    경쟁 상태가 생길 수 있다. autouse 픽스처로 경로를 격리해두면 patch 타이밍과
+    무관하게 항상 임시 경로를 쓴다(테스트가 끝나기 전까지는 되돌리지 않으므로)."""
     monkeypatch.setenv("TASK_STORE_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv("MEMORY_PATH", str(tmp_path / "memory.db"))
     import config.config as cfg
     importlib.reload(cfg)
     import core.task_store as task_store
     importlib.reload(task_store)
+    import core.memory as memory
+    importlib.reload(memory)
 
 
 def _fresh_server(monkeypatch, api_key=""):
@@ -111,12 +120,8 @@ def test_memory_search_requires_api_key(monkeypatch):
     assert r.status_code == 401
 
 
-def test_memory_search_returns_matching_records(monkeypatch, tmp_path):
-    monkeypatch.setenv("MEMORY_PATH", str(tmp_path / "memory.json"))
-    import config.config as cfg
-    importlib.reload(cfg)
+def test_memory_search_returns_matching_records(monkeypatch):
     import core.memory as memory
-    importlib.reload(memory)
     memory.save("날씨 알려줘", [{"action": "llm", "status": "ok"}])
     memory.save("뉴스 검색해줘", [{"action": "browser_search", "status": "ok"}])
 
@@ -129,12 +134,8 @@ def test_memory_search_returns_matching_records(monkeypatch, tmp_path):
     assert body[0]["task"] == "날씨 알려줘"
 
 
-def test_metrics_reports_queue_depth_and_task_counts(monkeypatch, tmp_path):
-    monkeypatch.setenv("MEMORY_PATH", str(tmp_path / "memory.json"))
-    import config.config as cfg
-    importlib.reload(cfg)
+def test_metrics_reports_queue_depth_and_task_counts(monkeypatch):
     import core.memory as memory
-    importlib.reload(memory)
     memory.save("작업", [{"action": "llm", "status": "ok"}])
 
     server = _fresh_server(monkeypatch, api_key="")

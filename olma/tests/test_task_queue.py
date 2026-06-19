@@ -8,17 +8,27 @@ from core.task_queue import TaskQueue
 
 
 @pytest.fixture(autouse=True)
-def _isolated_task_store(tmp_path, monkeypatch):
-    """모든 테스트가 실제 storage/tasks.db 대신 테스트별 임시 DB를 쓰게 한다.
+def _isolated_storage(tmp_path, monkeypatch):
+    """모든 테스트가 실제 storage/tasks.db·memory.db 대신 테스트별 임시 DB를 쓰게 한다.
 
-    core.task_queue는 task_store 모듈 객체를 그대로 참조하므로(`from core import task_store`),
-    이 모듈을 reload하면 importlib.reload가 같은 모듈 객체를 제자리에서 갱신하기 때문에
-    core.task_queue.task_store도 자동으로 새 TASK_STORE_PATH를 보게 된다."""
+    core.task_queue는 task_store/memory를 모듈 객체로 그대로 참조하므로(`from core
+    import memory, task_store`), 이 모듈들을 reload하면 importlib.reload가 같은
+    모듈 객체를 제자리에서 갱신하기 때문에 core.task_queue.task_store/.memory도
+    자동으로 새 경로를 보게 된다.
+
+    일부 테스트(예: 큐 깊이를 확인하느라 작업 완료를 기다리지 않는 테스트)는
+    백그라운드 워커가 끝나기 전에 `with patch(...)` 블록을 빠져나가, 패치가
+    워커보다 먼저 풀려 워커가 실제 core.memory를 호출하는 경쟁 상태가 생길 수
+    있다. autouse 픽스처는 테스트가 끝날 때까지 경로를 되돌리지 않으므로 patch
+    타이밍과 무관하게 항상 임시 경로를 쓴다."""
     monkeypatch.setenv("TASK_STORE_PATH", str(tmp_path / "tasks.db"))
+    monkeypatch.setenv("MEMORY_PATH", str(tmp_path / "memory.db"))
     import config.config as cfg
     importlib.reload(cfg)
     import core.task_store as task_store
     importlib.reload(task_store)
+    import core.memory as memory
+    importlib.reload(memory)
 
 
 def _wait_until_terminal(tq, task_id, timeout=5):

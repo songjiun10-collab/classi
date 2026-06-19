@@ -2,7 +2,7 @@ import importlib
 
 
 def _fresh_memory(tmp_path, monkeypatch):
-    monkeypatch.setenv("MEMORY_PATH", str(tmp_path / "memory.json"))
+    monkeypatch.setenv("MEMORY_PATH", str(tmp_path / "memory.db"))
     import config.config as cfg
     importlib.reload(cfg)
     import core.memory as memory
@@ -102,37 +102,6 @@ def test_find_returns_newest_match_first(tmp_path, monkeypatch):
     assert [r["task"] for r in matched] == ["둘째 매치 작업", "첫 매치 작업"]
 
 
-def test_save_writes_atomically_leaving_no_tmp_file(tmp_path, monkeypatch):
-    memory = _fresh_memory(tmp_path, monkeypatch)
-    memory.save("작업", [{"action": "llm", "status": "ok"}])
-
-    files = list(tmp_path.iterdir())
-    assert [f.name for f in files] == ["memory.json"]
-
-
-def test_corrupted_memory_file_self_heals_instead_of_raising(tmp_path, monkeypatch):
-    memory_path = tmp_path / "memory.json"
-    memory_path.write_text("{이건 깨진 JSON", encoding="utf-8")
-    memory = _fresh_memory(tmp_path, monkeypatch)
-
-    assert memory.load_all() == []
-    assert memory.get_context() == ""
-    # 손상된 원본은 지워지지 않고 타임스탬프가 붙어 백업된다.
-    backups = list(tmp_path.glob("memory.json.corrupt-*"))
-    assert len(backups) == 1
-
-
-def test_save_recovers_after_corruption_instead_of_staying_broken(tmp_path, monkeypatch):
-    memory_path = tmp_path / "memory.json"
-    memory_path.write_text("not json at all", encoding="utf-8")
-    memory = _fresh_memory(tmp_path, monkeypatch)
-
-    # 손상 이후에도 save()는 죽지 않고 정상적으로 새 기록을 쌓는다(영구 장애 방지).
-    record = memory.save("복구 후 작업", [{"action": "llm", "status": "ok"}])
-    assert record["status"] == "done"
-    assert [r["task"] for r in memory.load_all()] == ["복구 후 작업"]
-
-
 def test_save_rotates_out_oldest_records_beyond_max(tmp_path, monkeypatch):
     monkeypatch.setenv("MEMORY_MAX_RECORDS", "3")
     memory = _fresh_memory(tmp_path, monkeypatch)
@@ -143,3 +112,15 @@ def test_save_rotates_out_oldest_records_beyond_max(tmp_path, monkeypatch):
     loaded = memory.load_all()
     assert len(loaded) == 3
     assert [r["task"] for r in loaded] == ["작업2", "작업3", "작업4"]
+
+
+def test_records_persist_across_module_reload(tmp_path, monkeypatch):
+    """SQLite 파일 기반이므로 모듈을 새로 import해도(=재시작 시뮬레이션) 기록이 남아야 한다."""
+    memory = _fresh_memory(tmp_path, monkeypatch)
+    memory.save("재시작 전 작업", [{"action": "llm", "status": "ok"}])
+
+    import core.memory as memory_again
+    importlib.reload(memory_again)
+
+    loaded = memory_again.load_all()
+    assert [r["task"] for r in loaded] == ["재시작 전 작업"]

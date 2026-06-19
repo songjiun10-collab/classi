@@ -11,7 +11,7 @@ V0.2는 기능 추가가 아니라 **안정성/반복 성공률**을 위한 구�
 
 - **Planner = 제어 시스템**: 스키마 검증 + Ollama `format` 강제 + 1회 자기-교정 재시도 + 부분 step 복구. 그래도 실패하면 LLM을 전혀 쓰지 않는 **규칙 기반 폴백 플래너**(`core/fallback_planner.py`)가 키워드/URL로 의미 있는 step을 만든다(통째 폐기 안 함).
 - **Executor = 내결함성 시스템**: step당 재시도(backoff) → 그래도 실패하면 **대체 타겟 폴백**(브라우저 실패를 LLM이 아는 선에서 받음) → 그래도 안 되면 실패로 기록하고 다음 step 계속. 모든 단계가 `storage/olma.log`에 구조적으로 기록된다.
-- **Memory = 상태 시스템**: `{task, status(done/failed/partial), steps[], timestamp}` 단위로 저장하고, `get_context()`로 최근 작업 맥락을 다음 계획에 다시 넣는다(context 재사용). 키워드 검색(`find()`)은 대소문자를 구분하지 않고 task 텍스트뿐 아니라 각 step의 action/result까지 검색한다.
+- **Memory = 상태 시스템**: SQLite(`storage/memory.db`)에 `{task, status(done/failed/partial), steps[], timestamp}` 단위로 저장하고, `get_context()`로 최근 작업 맥락을 다음 계획에 다시 넣는다(context 재사용). 키워드 검색(`find()`)은 대소문자를 구분하지 않고 task 텍스트뿐 아니라 각 step의 action/result까지 검색한다.
 - **Router = 정책 엔진**: 결정론적 action→타겟 매핑 위에 **대체 타겟(fallback chain)**과 입력 완결성 기반 **confidence**(휴리스틱)를 얹는다.
 - **Browser = 안정화 레이어**: 명시적 wait 전략, **selector fallback**(후보 여러 개 순차 시도), DOM 텍스트가 비면 **OCR 폴백**, 실패 시 디버그 스크린샷. 배치 중간에 페이지/컨텍스트가 죽어도(탭이 닫히거나 크래시) `_ensure_page()`가 다음 step 실행 전에 자동 복구한다(page만 죽었으면 새 page만, context까지 죽었으면 전체 재시작).
 - **Task Queue = 영속 큐**: 처리된 task는 SQLite(`storage/tasks.db`)에도 기록되어 재시작해도 히스토리가 남는다. 단, 재개(resume)는 아니다 — 재시작 시점에 `queued`/`processing`이던 task는 브라우저 세션·워커 스레드가 이미 사라져 안전하게 이어갈 수 없으므로 `failed`로 정리된다.
@@ -52,6 +52,8 @@ python main.py
 |---|---|---|
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama 서버 주소 |
 | `OLLAMA_MODEL` | `qwen2.5:7b` | 사용할 모델 |
+| `MEMORY_PATH` | `storage/memory.db` | task 기록(상태/step/맥락)을 저장할 SQLite 파일 경로 |
+| `MEMORY_MAX_RECORDS` | `1000` | 보관할 최대 기록 수(초과분은 오래된 것부터 자동 삭제) |
 | `BROWSER_HEADLESS` | `false` | 브라우저 헤드리스 여부 |
 | `BROWSER_USER_DATA_DIR` | `storage/browser_profile` | 로그인 세션 유지를 위한 영구 프로필 경로 |
 | `KAKAO_WEB_URL` | (없음) | 알림 분석 기능에서 열 메신저 웹 페이지 URL. 직접 지정 필요 |
