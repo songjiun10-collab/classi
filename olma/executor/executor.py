@@ -143,11 +143,92 @@ def _run_fallback(fallback_target: str, step: dict, browser: Browser):
     return None, "failed"
 
 
+_SUCCESS_STATUSES = ("ok", "fallback")
+
+
+def _step_needs_browser(step: dict) -> bool:
+    try:
+        return router.route(step) in ("browser", "notifier")
+    except Exception:
+        # 미등록 action 등 잘못된 step은 실행 시점에 _run_step에서 그 step만 실패로
+        # 기록된다 — 여기서는 browser를 미리 띄울지 판단만 하므로 보수적으로 False.
+        return False
+
+
+def _failed_dependency_record(raw_step: dict, depends_on: int) -> dict:
+    return {
+        "step": raw_step,
+        "action": raw_step.get("action"),
+        "target": None,
+        "result": f"skipped: 의존 step {depends_on}이 실패해 실행하지 않음",
+        "status": "skipped",
+        "attempts": 0,
+        "duration": 0.0,
+        "error": None,
+        "confidence": None,
+    }
+
+
+def _exception_record(raw_step, exc: Exception) -> dict:
+    return {
+        "step": raw_step,
+        "action": raw_step.get("action") if isinstance(raw_step, dict) else None,
+        "target": None,
+        "result": f"error: {exc}",
+        "status": "failed",
+        "attempts": 0,
+        "duration": 0.0,
+        "error": str(exc),
+        "confidence": None,
+    }
+
+
+def _run_step(i: int, raw_step: dict, results_by_index: dict, browser: Browser) -> dict:
+    depends_on = raw_step.get("depends_on")
+    if depends_on is not None:
+        prior = results_by_index.get(depends_on)
+        if prior is not None and prior["status"] not in _SUCCESS_STATUSES:
+            # 실패/스킵된 step의 결과를 에러 문자열로 받아 실행을 강행하는 대신,
+            # 의존 step이 죽었다는 사실 자체를 그대로 전파한다(연쇄 스킵 포함).
+            log.info("step %d: 의존 step %d 실패로 건너뜀", i, depends_on)
+            return _failed_dependency_record(raw_step, depends_on)
+
+    step = _substitute_dependency(raw_step, results_by_index)
+    policy = router.route_policy(step)
+    target = policy["target"]
+    log.info(
+        "step %d 실행: action=%s target=%s confidence=%s",
+        i, step.get("action"), target, policy["confidence"],
+    )
+
+    started = time.monotonic()
+    result, status, attempts, error = _run_with_retries(target, step, browser)
+
+    if status == "failed" and policy["fallback"]:
+        log.info("step %d 대체 타겟(%s)으로 폴백 시도", i, policy["fallback"])
+        fb_result, fb_status = _run_fallback(policy["fallback"], step, browser)
+        if fb_status != "failed":
+            result, status = fb_result, fb_status
+
+    duration = round(time.monotonic() - started, 3)
+    return {
+        "step": step,
+        "action": step.get("action"),
+        "target": target,
+        "result": result if status in _SUCCESS_STATUSES else f"error: {error}",
+        "status": status,
+        "attempts": attempts,
+        "duration": duration,
+        "error": None if status in _SUCCESS_STATUSES else str(error),
+        "confidence": policy["confidence"],
+    }
+
+
 def execute_steps(steps: list) -> list:
     results = []
     results_by_index = {}
     browser = None
-    needs_browser = any(router.route(s) in ("browser", "notifier") for s in steps)
+    needs_browser = any(_step_needs_browser(s) for s in steps)
 
     log.info("실행 시작: step %d개 (browser 필요=%s)", len(steps), needs_browser)
 
@@ -157,38 +238,16 @@ def execute_steps(steps: list) -> list:
             browser.__enter__()
 
         for i, raw_step in enumerate(steps):
-            step = _substitute_dependency(raw_step, results_by_index)
-            policy = router.route_policy(step)
-            target = policy["target"]
-            log.info(
-                "step %d 실행: action=%s target=%s confidence=%s",
-                i, step.get("action"), target, policy["confidence"],
-            )
-
-            started = time.monotonic()
-            result, status, attempts, error = _run_with_retries(target, step, browser)
-
-            if status == "failed" and policy["fallback"]:
-                log.info("step %d 대체 타겟(%s)으로 폴백 시도", i, policy["fallback"])
-                fb_result, fb_status = _run_fallback(policy["fallback"], step, browser)
-                if fb_status != "failed":
-                    result, status = fb_result, fb_status
-
-            duration = round(time.monotonic() - started, 3)
-            record = {
-                "step": step,
-                "action": step.get("action"),
-                "target": target,
-                "result": result if status in ("ok", "fallback") else f"error: {error}",
-                "status": status,
-                "attempts": attempts,
-                "duration": duration,
-                "error": None if status in ("ok", "fallback") else str(error),
-                "confidence": policy["confidence"],
-            }
+            try:
+                record = _run_step(i, raw_step, results_by_index, browser)
+            except Exception as exc:
+                # route_policy/조립 단계의 예상치 못한 예외가 전체 배치를 날리지
+                # 않도록, 이 step만 실패로 기록하고 나머지 step은 계속 진행한다.
+                log.error("step %d 처리 중 예외, 해당 step만 실패로 기록: %s", i, exc)
+                record = _exception_record(raw_step, exc)
             results.append(record)
             results_by_index[i] = record
-            log.info("step %d 완료: status=%s (%.3fs)", i, status, duration)
+            log.info("step %d 완료: status=%s (%.3fs)", i, record["status"], record["duration"])
     finally:
         if browser:
             browser.__exit__(None, None, None)

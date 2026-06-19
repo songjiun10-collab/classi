@@ -111,3 +111,39 @@ def test_ask_web_ai_presses_enter_when_no_submit_selector():
 
     b._page.press.assert_called_once()
     assert b._page.press.call_args.args[1] == "Enter"
+
+
+def test_wait_for_response_stable_returns_once_length_stops_growing():
+    b = _browser_with_mock_page()
+    # 같은 길이의 응답이 연속 2번(stable_polls_required) 더 나오면 안정으로 보고 멈춘다.
+    b._page.inner_text.side_effect = ["답변", "답변", "답변", "이 값까지 소비되면 안됨"]
+
+    b._wait_for_response_stable("#answer", max_wait_ms=10000, poll_interval_ms=100, stable_polls_required=2)
+
+    # 안정 판정 직후 멈췄으므로 마지막 side_effect 값까지는 소비하지 않는다.
+    assert b._page.inner_text.call_count == 3
+
+
+def test_wait_for_response_stable_gives_up_at_max_wait_when_never_stable():
+    b = _browser_with_mock_page()
+    # 매번 다른 길이를 반환 -> 절대 안정화되지 않음 -> max_wait_ms에서 포기.
+    counter = iter(range(1000))
+    b._page.inner_text.side_effect = lambda *a, **k: "x" * next(counter)
+
+    b._wait_for_response_stable("#answer", max_wait_ms=300, poll_interval_ms=100, stable_polls_required=2)
+
+    assert b._page.wait_for_timeout.call_count == 3
+
+
+def test_wait_for_response_stable_treats_timeout_as_not_yet_stable():
+    b = _browser_with_mock_page()
+    b._page.inner_text.side_effect = [
+        PlaywrightTimeoutError("아직 응답 없음"),
+        "답변",
+        "답변",
+        "답변",
+    ]
+
+    b._wait_for_response_stable("#answer", max_wait_ms=10000, poll_interval_ms=100, stable_polls_required=2)
+
+    assert b._page.inner_text.call_count == 4

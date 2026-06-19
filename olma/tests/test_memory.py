@@ -70,3 +70,46 @@ def test_find_matches_by_keyword(tmp_path, monkeypatch):
     matched = memory.find("날씨")
     assert len(matched) == 1
     assert matched[0]["task"] == "날씨 알려줘"
+
+
+def test_save_writes_atomically_leaving_no_tmp_file(tmp_path, monkeypatch):
+    memory = _fresh_memory(tmp_path, monkeypatch)
+    memory.save("작업", [{"action": "llm", "status": "ok"}])
+
+    files = list(tmp_path.iterdir())
+    assert [f.name for f in files] == ["memory.json"]
+
+
+def test_corrupted_memory_file_self_heals_instead_of_raising(tmp_path, monkeypatch):
+    memory_path = tmp_path / "memory.json"
+    memory_path.write_text("{이건 깨진 JSON", encoding="utf-8")
+    memory = _fresh_memory(tmp_path, monkeypatch)
+
+    assert memory.load_all() == []
+    assert memory.get_context() == ""
+    # 손상된 원본은 지워지지 않고 타임스탬프가 붙어 백업된다.
+    backups = list(tmp_path.glob("memory.json.corrupt-*"))
+    assert len(backups) == 1
+
+
+def test_save_recovers_after_corruption_instead_of_staying_broken(tmp_path, monkeypatch):
+    memory_path = tmp_path / "memory.json"
+    memory_path.write_text("not json at all", encoding="utf-8")
+    memory = _fresh_memory(tmp_path, monkeypatch)
+
+    # 손상 이후에도 save()는 죽지 않고 정상적으로 새 기록을 쌓는다(영구 장애 방지).
+    record = memory.save("복구 후 작업", [{"action": "llm", "status": "ok"}])
+    assert record["status"] == "done"
+    assert [r["task"] for r in memory.load_all()] == ["복구 후 작업"]
+
+
+def test_save_rotates_out_oldest_records_beyond_max(tmp_path, monkeypatch):
+    monkeypatch.setenv("MEMORY_MAX_RECORDS", "3")
+    memory = _fresh_memory(tmp_path, monkeypatch)
+
+    for i in range(5):
+        memory.save(f"작업{i}", [{"action": "llm", "status": "ok"}])
+
+    loaded = memory.load_all()
+    assert len(loaded) == 3
+    assert [r["task"] for r in loaded] == ["작업2", "작업3", "작업4"]
