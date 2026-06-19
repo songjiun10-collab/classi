@@ -8,7 +8,7 @@ from typing import Optional
 try:
     from PIL import Image; import imagehash
 except ImportError:
-    sys.exit("FATAL: pip install ImageHash Pillow 필요")
+    Image = imagehash = None  # 지연 실패: 모듈 임포트(테스트 등)는 허용하고, 실제 사용 시점에만 에러
 
 ROOT = Path.home() / ".csat_v20"
 DEFAULT_DB = ROOT / "review.db"
@@ -54,6 +54,8 @@ def log_event(conn, kind, problem_id="", payload=None):
                  (now_iso(), kind, problem_id, json.dumps(payload or {}, ensure_ascii=False)))
 
 def compute_id(path):
+    if Image is None or imagehash is None:
+        sys.exit("FATAL: pip install ImageHash Pillow 필요")
     with Image.open(path) as im: phash = str(imagehash.phash(im))
     return f"{phash}:{hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:8]}"
 

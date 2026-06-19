@@ -101,7 +101,7 @@ class TestLearnedCalibration(unittest.TestCase):
     def _call(self):
         # 과학탐구/물리학Ⅰ, pro 증거 1건(물리학Ⅰ 일치, 가중1.0) → 하드코딩이면 +0.05.
         res = types.SimpleNamespace(confidence=0.8, subject="과학탐구", sub_subject="물리학Ⅰ")
-        pre = {"items": [{"polarity": "pro", "targets": ["물리학Ⅰ"], "confidence": 0.9, "source": "text"}]}
+        pre = {"items": [{"polarity": "pro", "targets": ["물리학Ⅰ"], "confidence": 1.0, "source": "text"}]}
         return calibrate_confidence(res, "", pre)
 
     def test_no_weights_identical_to_hardcoded(self):

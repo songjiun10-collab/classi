@@ -1299,7 +1299,7 @@ function renderCostSection(){
     return`<tr><td>${p.label}</td><td style="font-family:var(--f-mono)">${(u.calls||0).toLocaleString()}건</td><td>$${cost.toFixed(4)}</td></tr>`;
   }).filter(Boolean);
   const tbody=document.getElementById('cost-tbody');
-  tbody.innerHTML=rows.length?rows.join('')+'<tr class="total-row"><td>합계</td><td style="font-family:var(--f-mono)">${Object.values(usage).reduce((s,u)=>s+(u.calls||0),0).toLocaleString()}건</td><td>$'+total.toFixed(4)+'</td></tr>'
+  tbody.innerHTML=rows.length?rows.join('')+`<tr class="total-row"><td>합계</td><td style="font-family:var(--f-mono)">${Object.values(usage).reduce((s,u)=>s+(u.calls||0),0).toLocaleString()}건</td><td>$${total.toFixed(4)}</td></tr>`
     :'<tr><td colspan="3" style="text-align:center;color:var(--text-4);padding:20px">사용 기록 없음</td></tr>';
   document.getElementById('cost-total-label').textContent='$'+total.toFixed(4);
   renderCostChart();
