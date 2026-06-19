@@ -77,3 +77,22 @@ def test_plan_calls_generate_with_format_and_zero_temperature():
     _, kwargs = gen.call_args
     assert kwargs["temperature"] == 0.0
     assert "format" in kwargs
+
+
+def test_prompt_defaults_to_explicit_only_web_ai_policy():
+    valid = _valid_plan_json([{"action": "llm", "input": "hi"}])
+    captured = []
+    with patch("llm.ollama_client.generate", side_effect=lambda p, **kw: (captured.append(p), valid)[1]):
+        plan("hi")
+    assert "명시적으로 요청했을 때만" in captured[0]
+    assert "로컬 LLM 능력을 넘어선다" not in captured[0]
+
+
+def test_prompt_allows_difficulty_based_escalation_when_enabled():
+    valid = _valid_plan_json([{"action": "llm", "input": "hi"}])
+    captured = []
+    with patch("core.planner.WEB_AI_AUTO_ESCALATE", True), patch(
+        "llm.ollama_client.generate", side_effect=lambda p, **kw: (captured.append(p), valid)[1]
+    ):
+        plan("hi")
+    assert "로컬 LLM 능력을 넘어선다" in captured[0]

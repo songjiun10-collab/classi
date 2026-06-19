@@ -59,6 +59,7 @@ python main.py
 | `WEB_AI_SUBMIT_SELECTOR` | (없음) | 전송 버튼 선택자 (비우면 Enter 키 입력) |
 | `WEB_AI_RESPONSE_SELECTOR` | `body` | 응답 텍스트를 읽을 영역 선택자 |
 | `WEB_AI_WAIT_MS` | `8000` | 프롬프트 전송 후 응답 생성 대기(ms) |
+| `WEB_AI_AUTO_ESCALATE` | `false` | `true`로 켜면 Planner가 사용자의 명시적 요청 없이도 "로컬 LLM 능력을 넘는 고난도 작업"이라고 판단할 때 `web_ai_ask`를 스스로 선택할 수 있게 한다 |
 | `TESSERACT_LANG` | `kor+eng` | OCR 인식 언어 |
 | `RETRY_COUNT` | `2` | step 실패 시 추가 재시도 횟수 (1~3 권장) |
 | `RETRY_BACKOFF` | `0.5` | 재시도 사이 대기(초), 시도마다 2배 증가 |
@@ -80,6 +81,17 @@ Planner가 만드는 계획(Plan)은 `core/schema.py`의 Pydantic 스키마(`Pla
 - 로그인 벽이 있으면 `BROWSER_HEADLESS=false`로 최초 1회 직접 로그인 → 영구 프로필에 세션 유지(카톡과 동일).
 - 응답은 스트리밍이라 `WEB_AI_WAIT_MS`만큼 기다린 뒤 텍스트를 읽고, DOM이 비면 OCR로 폴백한다. 웹 AI가 실패하면 라우터 폴백으로 로컬 Ollama가 "아는 선에서" 받는다.
 - 대상 서비스의 이용약관에 자동화 제한이 있을 수 있으니 사용은 사용자 책임이다.
+
+### AI 역할 분담 (로컬 Ollama ↔ 웹 AI)
+
+기본값(`WEB_AI_AUTO_ESCALATE=false`)에서는 Planner가 사용자가 "챗GPT/웹 AI한테 물어봐"처럼 **명시적으로 요청했을 때만** `web_ai_ask`를 선택하고, 그 외 모든 요청은 로컬 Ollama(`llm`)로 처리한다.
+
+`WEB_AI_AUTO_ESCALATE=true`로 켜면 다음 **두 경우 중 하나**에 해당할 때 Planner가 스스로 `web_ai_ask`를 선택할 수 있다(하이브리드 정책):
+
+1. 사용자가 외부 웹 AI 사용을 명시적으로 요청한 경우
+2. 복잡한 코드 작성/디버깅, 최신 시사·실시간 정보, 여러 단계의 전문적 추론처럼 Planner가 보기에 **로컬 LLM 능력을 넘어선다고 판단**되는 경우
+
+이 판단은 ML 기반 난이도 분류기가 아니라 Planner LLM 자신의 자기 평가이며, 어디까지나 "로컬 우선" 기본 원칙에 대한 절충점이므로 기본값은 꺼져 있다. `web_ai_ask`가 실행 시 실패하면(예: `WEB_AI_URL` 미설정) 기존 라우터 폴백에 따라 로컬 Ollama가 "아는 선에서" 대신 답한다.
 
 ## 테스트
 

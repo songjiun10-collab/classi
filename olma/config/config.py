@@ -33,6 +33,13 @@ WEB_AI_INPUT_SELECTOR = os.environ.get("WEB_AI_INPUT_SELECTOR", "")  # 프롬프
 WEB_AI_SUBMIT_SELECTOR = os.environ.get("WEB_AI_SUBMIT_SELECTOR", "")  # 전송 버튼(비우면 Enter)
 WEB_AI_RESPONSE_SELECTOR = os.environ.get("WEB_AI_RESPONSE_SELECTOR", "body")  # 응답 영역
 WEB_AI_WAIT_MS = int(os.environ.get("WEB_AI_WAIT_MS", "8000"))  # 응답 생성 대기(ms)
+# 기본값(false)에서는 사용자가 명시적으로 요청했을 때만 web_ai_ask를 쓴다.
+# true로 켜면, Planner가 로컬 LLM 능력을 넘는 고난도 작업이라고 판단할 때도
+# (명시적 요청 없이) web_ai_ask를 선택할 수 있다. WEB_AI_URL 등이 미설정이면
+# 어차피 실행 시 실패하고 라우터 폴백으로 로컬 Ollama가 받는다.
+WEB_AI_AUTO_ESCALATE = os.environ.get("WEB_AI_AUTO_ESCALATE", "false").strip().lower() in (
+    "1", "true", "yes",
+)
 
 # --- OCR ---
 TESSERACT_LANG = os.environ.get("TESSERACT_LANG", "kor+eng")
