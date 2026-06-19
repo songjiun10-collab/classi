@@ -11,9 +11,10 @@ V0.2는 기능 추가가 아니라 **안정성/반복 성공률**을 위한 구�
 
 - **Planner = 제어 시스템**: 스키마 검증 + Ollama `format` 강제 + 1회 자기-교정 재시도 + 부분 step 복구. 그래도 실패하면 LLM을 전혀 쓰지 않는 **규칙 기반 폴백 플래너**(`core/fallback_planner.py`)가 키워드/URL로 의미 있는 step을 만든다(통째 폐기 안 함).
 - **Executor = 내결함성 시스템**: step당 재시도(backoff) → 그래도 실패하면 **대체 타겟 폴백**(브라우저 실패를 LLM이 아는 선에서 받음) → 그래도 안 되면 실패로 기록하고 다음 step 계속. 모든 단계가 `storage/olma.log`에 구조적으로 기록된다.
-- **Memory = 상태 시스템**: `{task, status(done/failed/partial), steps[], timestamp}` 단위로 저장하고, `get_context()`로 최근 작업 맥락을 다음 계획에 다시 넣는다(context 재사용). 키워드 검색(`find()`)도 지원.
+- **Memory = 상태 시스템**: `{task, status(done/failed/partial), steps[], timestamp}` 단위로 저장하고, `get_context()`로 최근 작업 맥락을 다음 계획에 다시 넣는다(context 재사용). 키워드 검색(`find()`)은 대소문자를 구분하지 않고 task 텍스트뿐 아니라 각 step의 action/result까지 검색한다.
 - **Router = 정책 엔진**: 결정론적 action→타겟 매핑 위에 **대체 타겟(fallback chain)**과 입력 완결성 기반 **confidence**(휴리스틱)를 얹는다.
-- **Browser = 안정화 레이어**: 명시적 wait 전략, **selector fallback**(후보 여러 개 순차 시도), DOM 텍스트가 비면 **OCR 폴백**, 실패 시 디버그 스크린샷.
+- **Browser = 안정화 레이어**: 명시적 wait 전략, **selector fallback**(후보 여러 개 순차 시도), DOM 텍스트가 비면 **OCR 폴백**, 실패 시 디버그 스크린샷. 배치 중간에 페이지/컨텍스트가 죽어도(탭이 닫히거나 크래시) `_ensure_page()`가 다음 step 실행 전에 자동 복구한다(page만 죽었으면 새 page만, context까지 죽었으면 전체 재시작).
+- **Task Queue = 영속 큐**: 처리된 task는 SQLite(`storage/tasks.db`)에도 기록되어 재시작해도 히스토리가 남는다. 단, 재개(resume)는 아니다 — 재시작 시점에 `queued`/`processing`이던 task는 브라우저 세션·워커 스레드가 이미 사라져 안전하게 이어갈 수 없으므로 `failed`로 정리된다.
 
 > timeout은 신호(signal)로 강제 종료하지 않고 I/O 계층(Ollama 요청 timeout, Playwright 동작 timeout)에서 적용한다 — sync Playwright를 강제 중단하면 브라우저 상태가 깨지기 때문.
 
@@ -72,6 +73,8 @@ python main.py
 | `OLMA_API_PORT` | `8800` | HTTP API 바인드 포트 |
 | `OLMA_API_KEY` | (없음) | 설정하면 모든 `/api/*` 요청에 `X-API-Key` 헤더 검증을 강제한다. 비워두면 인증 없음(로컬 단일 사용자 전제) — 네트워크로 노출할 때는 반드시 설정할 것 |
 | `TASK_QUEUE_MAX_TASKS` | `200` | 작업 큐가 메모리에 보관하는 완료/실패 작업 기록 상한(초과분은 오래된 것부터 제거, 진행 중 작업은 보존) |
+| `TASK_STORE_PATH` | `storage/tasks.db` | task 기록을 영속화할 SQLite 파일 경로. 재시작 시 히스토리를 복원하지만, 그 시점에 `queued`/`processing`이던 task는 재개 불가로 판단해 `failed`로 정리한다 |
+| `WEB_AI_PROVIDERS_PATH` | (없음) | 여러 웹 AI 제공자를 등록한 JSON 파일 경로. 비워두면 위 `WEB_AI_*` 단일 설정을 `"default"` 제공자 하나로만 사용한다(하위 호환) |
 
 ## HTTP API (선택)
 
@@ -93,6 +96,7 @@ python -m uvicorn api.server:app --host 0.0.0.0 --port 8800
 | POST | `/api/task` | 새 작업 제출 (`{"input": "..."}`) → `{task_id, status}` | `OLMA_API_KEY` 설정 시 필요 |
 | GET | `/api/task/{task_id}` | 작업 상태/결과 조회 | 〃 |
 | GET | `/api/tasks?limit=20` | 최근 작업 목록 | 〃 |
+| GET | `/api/memory/search?q=키워드&limit=10` | task 텍스트/step의 action·result에 키워드가 포함된 기록 검색(대소문자 무시, 최신순) | 〃 |
 | GET | `/api/metrics` | 큐 깊이, 가동시간, 상태별 작업 수 | 〃 |
 
 **왜 큐가 직렬(단일 워커)인가**: Playwright는 로그인 세션을 유지하는 영구 브라우저 프로필을 전제로 한다. 여러 작업을 동시에 실행하면 같은 브라우저를 두 코드가 동시에 조작해 세션이 깨지므로, Redis/Celery 같은 분산 큐 대신 워커 스레드 1개가 큐를 순서대로 비우는 가장 단순한 구조(`core/task_queue.py`)를 쓴다 — 처리량보다 정확성이 우선이다.
@@ -118,10 +122,28 @@ Planner가 만드는 계획(Plan)은 `core/schema.py`의 Pydantic 스키마(`Pla
 
 외부 클라우드 AI **API는 쓰지 않되**, 카톡과 동일한 방식으로 브라우저를 띄워 웹 AI 채팅(예: 사내 LLM 포털 등 사용자가 접근 권한을 가진 페이지)에 프롬프트를 입력하고 응답을 읽어 온다. "모든 추론은 로컬"이라는 기본 원칙과는 절충점이며, 명시적으로 켜야 동작한다.
 
-- 어떤 웹 AI를 쓸지, 입력창/전송/응답 영역 selector는 사이트마다 다르므로 **코드에 박지 않고** `WEB_AI_*` 환경변수로 사용자가 직접 지정한다(미설정 시 명확한 오류). URL을 임의로 추측하지 않는다.
+- 어떤 웹 AI를 쓸지, 입력창/전송/응답 영역 selector는 사이트마다 다르므로 **코드에 박지 않고** 사용자가 직접 지정한다(미설정 시 명확한 오류). URL을 임의로 추측하지 않는다.
 - 로그인 벽이 있으면 `BROWSER_HEADLESS=false`로 최초 1회 직접 로그인 → 영구 프로필에 세션 유지(카톡과 동일).
-- 응답은 스트리밍이라 `WEB_AI_WAIT_MS`만큼 기다린 뒤 텍스트를 읽고, DOM이 비면 OCR로 폴백한다. 웹 AI가 실패하면 라우터 폴백으로 로컬 Ollama가 "아는 선에서" 받는다.
+- 응답은 스트리밍이라 `wait_ms`만큼 기다린 뒤 텍스트를 읽고, DOM이 비면 OCR로 폴백한다. 웹 AI가 실패하면 라우터 폴백으로 로컬 Ollama가 "아는 선에서" 받는다.
 - 대상 서비스의 이용약관에 자동화 제한이 있을 수 있으니 사용은 사용자 책임이다.
+
+### 다중 제공자 등록 (`core/web_ai_providers.py`)
+
+웹 AI를 하나만 쓴다면 위 `WEB_AI_*` 환경변수만 설정하면 된다(`"default"` 제공자로 동작). 여러 웹 AI를 등록해 작업별로 골라 쓰려면 `WEB_AI_PROVIDERS_PATH`로 JSON 파일을 가리킨다:
+
+```json
+{
+  "internal_llm": {
+    "url": "https://internal.example.com/chat",
+    "input_selector": "#prompt-box",
+    "submit_selector": "#send-btn",
+    "response_selector": ".response",
+    "wait_ms": 20000
+  }
+}
+```
+
+`url`/`input_selector`는 필수이고, `submit_selector`(없으면 Enter 키)/`response_selector`(기본 `body`)/`wait_ms`(기본 `WEB_AI_WAIT_MS`)는 선택이다. `web_ai_ask` step의 `input`은 기존 `browser_type`의 `"selector|||text"` 구분자 관례를 그대로 따라 `"provider_name|||prompt"` 형태로 쓴다 — `provider_name`이 등록된 이름이면 그 제공자를 쓰고, 아니면 전체 문자열을 `"default"` 제공자에 보낼 prompt로 취급한다.
 
 ### AI 역할 분담 (로컬 Ollama ↔ 웹 AI)
 

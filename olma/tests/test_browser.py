@@ -8,7 +8,9 @@ from tools.browser import Browser, _as_selector_list
 
 def _browser_with_mock_page():
     b = Browser()
+    b._context = MagicMock()
     b._page = MagicMock()
+    b._page.is_closed.return_value = False
     return b
 
 
@@ -147,3 +149,79 @@ def test_wait_for_response_stable_treats_timeout_as_not_yet_stable():
     b._wait_for_response_stable("#answer", max_wait_ms=10000, poll_interval_ms=100, stable_polls_required=2)
 
     assert b._page.inner_text.call_count == 4
+
+
+def test_ensure_page_recreates_page_when_closed():
+    b = _browser_with_mock_page()
+    old_page = b._page
+    old_page.is_closed.return_value = True
+    new_page = MagicMock()
+    b._context.new_page.return_value = new_page
+
+    b._ensure_page()
+
+    assert b._page is new_page
+    b._context.new_page.assert_called_once()
+
+
+def test_ensure_page_does_nothing_when_page_alive():
+    b = _browser_with_mock_page()
+    old_page = b._page
+
+    b._ensure_page()
+
+    assert b._page is old_page
+    b._context.new_page.assert_not_called()
+
+
+class _DeadContext:
+    """pages 접근만으로 예외를 던지는, 죽은 context를 흉내내는 더미.
+
+    MagicMock 클래스 자체에 property를 얹으면 다른 테스트의 MagicMock까지
+    오염되므로, 이 테스트만을 위한 독립된 더미 클래스를 쓴다."""
+
+    @property
+    def pages(self):
+        raise RuntimeError("context closed")
+
+
+def test_ensure_page_restarts_when_context_dead():
+    b = _browser_with_mock_page()
+    b._context = _DeadContext()
+
+    with patch.object(b, "_restart") as restart:
+        b._ensure_page()
+
+    restart.assert_called_once()
+
+
+def test_ensure_page_restarts_when_context_missing():
+    b = Browser()
+    assert b._context is None
+    assert b._page is None
+
+    with patch.object(b, "_restart") as restart:
+        b._ensure_page()
+
+    restart.assert_called_once()
+
+
+def test_restart_tears_down_and_relaunches():
+    b = _browser_with_mock_page()
+
+    with patch.object(b, "_teardown") as teardown, patch.object(b, "_launch") as launch:
+        b._restart()
+
+    teardown.assert_called_once()
+    launch.assert_called_once()
+
+
+def test_open_recovers_when_page_was_closed():
+    b = _browser_with_mock_page()
+    b._page.is_closed.return_value = True
+    new_page = MagicMock()
+    b._context.new_page.return_value = new_page
+
+    b.open("https://example.com")
+
+    new_page.goto.assert_called_once()

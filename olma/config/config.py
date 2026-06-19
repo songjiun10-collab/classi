@@ -73,3 +73,12 @@ OLMA_API_KEY = os.environ.get("OLMA_API_KEY", "")
 
 # --- Task Queue ---
 TASK_QUEUE_MAX_TASKS = int(os.environ.get("TASK_QUEUE_MAX_TASKS", "200"))
+
+# --- Task Store (SQLite, task 기록 영속화 — 재시작 시 히스토리 보존 목적.
+# 처리 중이던 task는 안전하게 재개할 수 없으므로 재시작 시 failed로 전환된다) ---
+TASK_STORE_PATH = os.environ.get("TASK_STORE_PATH", str(BASE_DIR / "storage" / "tasks.db"))
+
+# --- Web AI Providers (다중 제공자 레지스트리. 비워두면 위 WEB_AI_* 단일 설정만
+# "default" provider로 쓴다. 여러 웹 AI를 쓰려면 JSON 파일 경로를 지정한다 —
+# 사이트별 URL/selector는 자주 바뀌고 임의로 추측할 수 없으므로 코드에 박지 않는다) ---
+WEB_AI_PROVIDERS_PATH = os.environ.get("WEB_AI_PROVIDERS_PATH", "")

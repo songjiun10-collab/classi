@@ -46,6 +46,13 @@ class Browser:
         self._page = None
 
     def __enter__(self):
+        self._launch()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._teardown()
+
+    def _launch(self) -> None:
         os.makedirs(self.user_data_dir, exist_ok=True)
         self._playwright = sync_playwright().start()
         self._context = self._playwright.chromium.launch_persistent_context(
@@ -53,15 +60,47 @@ class Browser:
         )
         self._context.set_default_timeout(self.timeout)
         self._page = self._context.new_page()
-        return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self._context:
-            self._context.close()
-        if self._playwright:
-            self._playwright.stop()
+    def _teardown(self) -> None:
+        try:
+            if self._context:
+                self._context.close()
+        except Exception as exc:
+            log.debug("context 종료 중 오류(무시): %s", exc)
+        try:
+            if self._playwright:
+                self._playwright.stop()
+        except Exception as exc:
+            log.debug("playwright 종료 중 오류(무시): %s", exc)
+
+    def _ensure_page(self) -> None:
+        """배치 중간에 페이지/탭이 죽었을 때(사용자가 닫음, 탭 크래시 등) 복구한다.
+
+        context 자체는 살아있는데 page만 닫혔으면 새 page만 새로 열고,
+        context까지 죽어 있으면 전체를 재launch한다 — 한 step의 장애가
+        이후 모든 step을 영구히 실패시키지 않도록 하는 것이 목적이다."""
+        if self._context is None or self._page is None:
+            self._restart()
+            return
+        try:
+            self._context.pages  # 접근만으로 context 생존 확인(닫혀 있으면 예외)
+        except Exception:
+            self._restart()
+            return
+        if self._page.is_closed():
+            log.warning("페이지가 닫혀 있어 새 페이지를 생성")
+            try:
+                self._page = self._context.new_page()
+            except Exception:
+                self._restart()
+
+    def _restart(self) -> None:
+        log.warning("브라우저 컨텍스트가 죽어 있어 재시작")
+        self._teardown()
+        self._launch()
 
     def open(self, url: str) -> None:
+        self._ensure_page()
         # 네트워크가 끝나길 무한정 기다리지 않도록 DOM 로드 기준으로 대기한다.
         self._page.goto(url, wait_until="domcontentloaded", timeout=self.timeout)
 
@@ -80,15 +119,18 @@ class Browser:
         )
 
     def click(self, selector) -> None:
+        self._ensure_page()
         sel = self._first_visible(_as_selector_list(selector))
         self._page.click(sel, timeout=self.timeout)
 
     def type(self, selector, text: str) -> None:
+        self._ensure_page()
         sel = self._first_visible(_as_selector_list(selector))
         self._page.fill(sel, text, timeout=self.timeout)
 
     def get_text(self, selector: str = "body") -> str:
         """DOM 텍스트를 우선 추출하고, 비어 있거나 실패하면 스크린샷+OCR로 폴백한다."""
+        self._ensure_page()
         try:
             text = self._page.inner_text(selector, timeout=self.timeout).strip()
             if text:
@@ -101,6 +143,7 @@ class Browser:
         return ocr.image_to_text(path)
 
     def screenshot(self, path: str = None) -> str:
+        self._ensure_page()
         os.makedirs(SCREENSHOT_DIR, exist_ok=True)
         path = path or os.path.join(SCREENSHOT_DIR, "capture.png")
         self._page.screenshot(path=path)

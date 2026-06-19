@@ -72,6 +72,36 @@ def test_find_matches_by_keyword(tmp_path, monkeypatch):
     assert matched[0]["task"] == "날씨 알려줘"
 
 
+def test_find_is_case_insensitive(tmp_path, monkeypatch):
+    memory = _fresh_memory(tmp_path, monkeypatch)
+    memory.save("Python 공식 문서 열어줘", [{"action": "browser_open", "status": "ok"}])
+
+    matched = memory.find("python")
+    assert len(matched) == 1
+
+
+def test_find_matches_step_action_and_result(tmp_path, monkeypatch):
+    memory = _fresh_memory(tmp_path, monkeypatch)
+    memory.save("작업1", [{"action": "browser_search", "status": "ok", "result": "흥미로운 뉴스 결과"}])
+    memory.save("작업2", [{"action": "llm", "status": "ok", "result": "다른 답변"}])
+
+    by_action = memory.find("browser_search")
+    assert [r["task"] for r in by_action] == ["작업1"]
+
+    by_result = memory.find("뉴스")
+    assert [r["task"] for r in by_result] == ["작업1"]
+
+
+def test_find_returns_newest_match_first(tmp_path, monkeypatch):
+    memory = _fresh_memory(tmp_path, monkeypatch)
+    memory.save("첫 매치 작업", [{"action": "llm", "status": "ok"}])
+    memory.save("관련 없음", [{"action": "llm", "status": "ok"}])
+    memory.save("둘째 매치 작업", [{"action": "llm", "status": "ok"}])
+
+    matched = memory.find("매치")
+    assert [r["task"] for r in matched] == ["둘째 매치 작업", "첫 매치 작업"]
+
+
 def test_save_writes_atomically_leaving_no_tmp_file(tmp_path, monkeypatch):
     memory = _fresh_memory(tmp_path, monkeypatch)
     memory.save("작업", [{"action": "llm", "status": "ok"}])

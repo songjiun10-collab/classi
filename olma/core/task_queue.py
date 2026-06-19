@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 
 from config.config import TASK_QUEUE_MAX_TASKS
-from core import memory
+from core import memory, task_store
 from core.logger import get_logger
 from core.planner import plan
 from executor.executor import execute_steps
@@ -26,13 +26,25 @@ class TaskQueue:
         self._order: list = []
         self._queue: "queue.Queue[str]" = queue.Queue()
         self._lock = threading.Lock()
+        self._restore_from_store()
         self._worker = threading.Thread(target=self._run_worker, daemon=True)
         self._worker.start()
+
+    def _restore_from_store(self):
+        """재시작 시 히스토리를 복원한다. 재개가 아니라 기록 보존이 목적이므로,
+        직전에 처리 중이던 task는 안전하게 이어서 실행할 수 없어 failed로 정리한다."""
+        try:
+            task_store.mark_interrupted_as_failed()
+            for task in task_store.load_all():
+                self._tasks[task["task_id"]] = task
+                self._order.append(task["task_id"])
+        except Exception as exc:
+            log.error("task store 복원 실패, 빈 상태로 시작: %s", exc)
 
     def submit(self, user_input: str) -> str:
         task_id = uuid.uuid4().hex
         with self._lock:
-            self._tasks[task_id] = {
+            task = {
                 "task_id": task_id,
                 "input": user_input,
                 "status": "queued",
@@ -41,10 +53,18 @@ class TaskQueue:
                 "error": None,
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
+            self._tasks[task_id] = task
             self._order.append(task_id)
             self._evict_old_tasks()
+        self._safe_upsert(task)
         self._queue.put(task_id)
         return task_id
+
+    def _safe_upsert(self, task: dict):
+        try:
+            task_store.upsert(task)
+        except Exception as exc:
+            log.error("task store 저장 실패(%s): %s", task.get("task_id"), exc)
 
     def get(self, task_id: str) -> dict | None:
         with self._lock:
@@ -67,6 +87,10 @@ class TaskQueue:
                 if task is not None and task["status"] in _TERMINAL_STATUSES:
                     del self._order[idx]
                     self._tasks.pop(tid, None)
+                    try:
+                        task_store.delete(tid)
+                    except Exception as exc:
+                        log.error("task store에서 삭제 실패(%s): %s", tid, exc)
                     break
             else:
                 break  # 제거 가능한 종료 상태 task가 없음(전부 처리 중)
@@ -82,6 +106,7 @@ class TaskQueue:
                     if task_id in self._tasks:
                         self._tasks[task_id]["status"] = "failed"
                         self._tasks[task_id]["error"] = str(exc)
+                        self._safe_upsert(self._tasks[task_id])
 
     def _process(self, task_id: str):
         with self._lock:
@@ -90,6 +115,7 @@ class TaskQueue:
                 return
             task["status"] = "processing"
             user_input = task["input"]
+            self._safe_upsert(task)
 
         try:
             context = memory.get_context()
@@ -99,6 +125,7 @@ class TaskQueue:
             with self._lock:
                 self._tasks[task_id]["status"] = "failed"
                 self._tasks[task_id]["error"] = str(exc)
+                self._safe_upsert(self._tasks[task_id])
             return
 
         results = execute_steps(steps)
@@ -107,3 +134,4 @@ class TaskQueue:
             self._tasks[task_id]["status"] = "completed"
             self._tasks[task_id]["outcome"] = record["status"]
             self._tasks[task_id]["results"] = results
+            self._safe_upsert(self._tasks[task_id])

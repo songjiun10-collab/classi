@@ -2,7 +2,19 @@ import importlib
 import time
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
+
+
+@pytest.fixture(autouse=True)
+def _isolated_task_store(tmp_path, monkeypatch):
+    """TaskQueue()는 생성 시 task_store에서 히스토리를 복원하므로, 서버를 새로
+    띄우는 테스트마다 실제 storage/tasks.db 대신 테스트별 임시 DB를 쓰게 한다."""
+    monkeypatch.setenv("TASK_STORE_PATH", str(tmp_path / "tasks.db"))
+    import config.config as cfg
+    importlib.reload(cfg)
+    import core.task_store as task_store
+    importlib.reload(task_store)
 
 
 def _fresh_server(monkeypatch, api_key=""):
@@ -90,6 +102,31 @@ def test_unknown_task_id_returns_404(monkeypatch):
     client = TestClient(server.app)
     r = client.get("/api/task/does-not-exist")
     assert r.status_code == 404
+
+
+def test_memory_search_requires_api_key(monkeypatch):
+    server = _fresh_server(monkeypatch, api_key="secret")
+    client = TestClient(server.app)
+    r = client.get("/api/memory/search", params={"q": "날씨"})
+    assert r.status_code == 401
+
+
+def test_memory_search_returns_matching_records(monkeypatch, tmp_path):
+    monkeypatch.setenv("MEMORY_PATH", str(tmp_path / "memory.json"))
+    import config.config as cfg
+    importlib.reload(cfg)
+    import core.memory as memory
+    importlib.reload(memory)
+    memory.save("날씨 알려줘", [{"action": "llm", "status": "ok"}])
+    memory.save("뉴스 검색해줘", [{"action": "browser_search", "status": "ok"}])
+
+    server = _fresh_server(monkeypatch, api_key="")
+    client = TestClient(server.app)
+    r = client.get("/api/memory/search", params={"q": "날씨"})
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    assert body[0]["task"] == "날씨 알려줘"
 
 
 def test_metrics_reports_queue_depth_and_task_counts(monkeypatch, tmp_path):

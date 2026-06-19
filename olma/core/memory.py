@@ -116,8 +116,19 @@ def get_context(n: int = 3) -> str:
 
 
 def find(keyword: str, n: int = 10) -> list:
-    """task 문자열에 keyword가 포함된 최근 레코드를 최신순으로 돌려준다."""
+    """task 텍스트 또는 step의 action/result에 keyword가 포함된 최근 레코드를
+    대소문자 구분 없이 검색해 최신순으로 돌려준다."""
     if not keyword:
         return []
-    matched = [rec for rec in _load_raw() if keyword in str(rec.get("task", ""))]
+    needle = keyword.lower()
+    matched = []
+    for rec in _load_raw():
+        haystacks = [str(rec.get("task", ""))]
+        steps = rec.get("steps")
+        if isinstance(steps, list):
+            for step in steps:
+                haystacks.append(str(step.get("action", "")))
+                haystacks.append(str(step.get("result", "")))
+        if any(needle in h.lower() for h in haystacks):
+            matched.append(rec)
     return matched[-n:][::-1]

@@ -8,18 +8,8 @@ Playwright 동작 timeout)에서 적용한다 — Playwright sync 객체를 스�
 강제 중단하면 브라우저 상태가 깨지기 때문(과도한 추상화/취약성 회피)."""
 import time
 
-from config.config import (
-    OLLAMA_TEMPERATURE_DEFAULT,
-    RETRY_BACKOFF,
-    RETRY_COUNT,
-    STEP_TIMEOUT,
-    WEB_AI_INPUT_SELECTOR,
-    WEB_AI_RESPONSE_SELECTOR,
-    WEB_AI_SUBMIT_SELECTOR,
-    WEB_AI_URL,
-    WEB_AI_WAIT_MS,
-)
-from core import notifier, router
+from config.config import OLLAMA_TEMPERATURE_DEFAULT, RETRY_BACKOFF, RETRY_COUNT, STEP_TIMEOUT
+from core import notifier, router, web_ai_providers
 from core.logger import get_logger
 from core.schema import EXTERNAL_DATA_BEGIN, EXTERNAL_DATA_END, MAX_INPUT_CHARS
 from llm import ollama_client
@@ -83,13 +73,14 @@ def _run_browser(step: dict, browser: Browser) -> str:
     if action == "browser_screenshot":
         return browser.screenshot()
     if action == "web_ai_ask":
+        provider, prompt = web_ai_providers.resolve(arg)
         return browser.ask_web_ai(
-            arg,
-            WEB_AI_URL,
-            WEB_AI_INPUT_SELECTOR,
-            WEB_AI_SUBMIT_SELECTOR,
-            WEB_AI_RESPONSE_SELECTOR,
-            WEB_AI_WAIT_MS,
+            prompt,
+            provider["url"],
+            provider["input_selector"],
+            provider["submit_selector"],
+            provider["response_selector"],
+            provider["wait_ms"],
         )
 
     raise ValueError(f"알 수 없는 browser action: {action}")

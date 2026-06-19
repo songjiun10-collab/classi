@@ -76,6 +76,15 @@ small{color:var(--text-3);font-size:12px}
     <div class="metrics" id="metrics">로딩 중...</div>
   </div>
 
+  <div class="card">
+    <label for="memSearch">기록 검색</label>
+    <div class="row">
+      <div><input type="text" id="memSearch" placeholder="작업/결과 키워드로 검색"></div>
+      <button id="memSearchBtn">검색</button>
+    </div>
+    <div id="memResults" style="margin-top:10px"></div>
+  </div>
+
   <h2 style="font-size:15px;margin-bottom:10px">최근 작업</h2>
   <div id="taskList"></div>
 </div>
@@ -160,6 +169,54 @@ function renderTask(task) {
       ${steps}
     </div>`;
 }
+
+const memSearch = document.getElementById("memSearch");
+const memSearchBtn = document.getElementById("memSearchBtn");
+const memResults = document.getElementById("memResults");
+
+function renderMemoryRecord(rec) {
+  const steps = (rec.steps || []).map((s) => {
+    const status = escapeHtml(s.status || "");
+    const action = escapeHtml(s.action || "?");
+    const result = escapeHtml(String(s.result ?? ""));
+    return `<div class="step"><span class="status ${status}">[${status}]</span> (${action}) ${result}</div>`;
+  }).join("");
+
+  return `
+    <div class="task">
+      <div class="task-head">
+        <div class="task-input">${escapeHtml(rec.task)}</div>
+        <span class="badge ${escapeHtml(rec.status)}">${escapeHtml(rec.status)}</span>
+      </div>
+      ${steps}
+    </div>`;
+}
+
+async function searchMemory() {
+  const q = memSearch.value.trim();
+  if (!q) {
+    memResults.innerHTML = "";
+    return;
+  }
+  try {
+    const resp = await fetch(`/api/memory/search?q=${encodeURIComponent(q)}`, { headers: headers() });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      throw new Error(body.detail || `검색 실패 (${resp.status})`);
+    }
+    const records = await resp.json();
+    memResults.innerHTML = records.length
+      ? records.map(renderMemoryRecord).join("")
+      : '<small>일치하는 기록이 없습니다.</small>';
+  } catch (e) {
+    memResults.innerHTML = `<small>${escapeHtml(e.message)}</small>`;
+  }
+}
+
+memSearchBtn.addEventListener("click", searchMemory);
+memSearch.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") searchMemory();
+});
 
 async function refreshTasks() {
   try {

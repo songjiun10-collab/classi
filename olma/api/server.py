@@ -74,6 +74,11 @@ async def list_tasks(limit: int = 20):
     return _task_queue.list_recent(limit)
 
 
+@app.get("/api/memory/search", dependencies=[Depends(_require_api_key)])
+async def search_memory(q: str, limit: int = 10):
+    return memory.find(q, limit)
+
+
 @app.get("/api/metrics", dependencies=[Depends(_require_api_key)])
 async def metrics():
     records = memory.load_all()
