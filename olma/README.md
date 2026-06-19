@@ -58,7 +58,7 @@ python main.py
 | `WEB_AI_INPUT_SELECTOR` | (없음) | 웹 AI 프롬프트 입력창 CSS 선택자 |
 | `WEB_AI_SUBMIT_SELECTOR` | (없음) | 전송 버튼 선택자 (비우면 Enter 키 입력) |
 | `WEB_AI_RESPONSE_SELECTOR` | `body` | 응답 텍스트를 읽을 영역 선택자 |
-| `WEB_AI_WAIT_MS` | `8000` | 프롬프트 전송 후 응답 생성 대기(ms) |
+| `WEB_AI_WAIT_MS` | `30000` | 프롬프트 전송 후 응답 안정화 대기 상한(ms) |
 | `WEB_AI_AUTO_ESCALATE` | `false` | `true`로 켜면 Planner가 사용자의 명시적 요청 없이도 "로컬 LLM 능력을 넘는 고난도 작업"이라고 판단할 때 `web_ai_ask`를 스스로 선택할 수 있게 한다 |
 | `TESSERACT_LANG` | `kor+eng` | OCR 인식 언어 |
 | `RETRY_COUNT` | `2` | step 실패 시 추가 재시도 횟수 (1~3 권장) |
@@ -68,6 +68,47 @@ python main.py
 | `LOG_PATH` | `storage/olma.log` | 구조적 로그 파일 경로 |
 | `LOG_LEVEL` | `INFO` | 로그 레벨 |
 | `OLLAMA_TEMPERATURE_DEFAULT` | `0.7` | Planner/분류 외 일반 LLM 호출(`llm`/`summarize`)의 기본 temperature |
+| `OLMA_API_HOST` | `0.0.0.0` | HTTP API 바인드 호스트 |
+| `OLMA_API_PORT` | `8800` | HTTP API 바인드 포트 |
+| `OLMA_API_KEY` | (없음) | 설정하면 모든 `/api/*` 요청에 `X-API-Key` 헤더 검증을 강제한다. 비워두면 인증 없음(로컬 단일 사용자 전제) — 네트워크로 노출할 때는 반드시 설정할 것 |
+| `TASK_QUEUE_MAX_TASKS` | `200` | 작업 큐가 메모리에 보관하는 완료/실패 작업 기록 상한(초과분은 오래된 것부터 제거, 진행 중 작업은 보존) |
+
+## HTTP API (선택)
+
+REPL(`main.py`) 대신, Olma를 HTTP로 노출해 다른 기기/프로그램에서 작업을 제출할 수도 있다.
+
+```bash
+cd olma
+python -m uvicorn api.server:app --host 0.0.0.0 --port 8800
+```
+
+브라우저로 `http://localhost:8800/` 을 열면 작업 제출/이력/메트릭을 보는 간단한 프런트엔드(`frontend/index.html`)가 뜬다.
+
+엔드포인트:
+
+| Method | Path | 설명 | 인증 |
+|---|---|---|---|
+| GET | `/health` | 헬스체크 | 불필요 |
+| GET | `/` | 프런트엔드 | 불필요 |
+| POST | `/api/task` | 새 작업 제출 (`{"input": "..."}`) → `{task_id, status}` | `OLMA_API_KEY` 설정 시 필요 |
+| GET | `/api/task/{task_id}` | 작업 상태/결과 조회 | 〃 |
+| GET | `/api/tasks?limit=20` | 최근 작업 목록 | 〃 |
+| GET | `/api/metrics` | 큐 깊이, 가동시간, 상태별 작업 수 | 〃 |
+
+**왜 큐가 직렬(단일 워커)인가**: Playwright는 로그인 세션을 유지하는 영구 브라우저 프로필을 전제로 한다. 여러 작업을 동시에 실행하면 같은 브라우저를 두 코드가 동시에 조작해 세션이 깨지므로, Redis/Celery 같은 분산 큐 대신 워커 스레드 1개가 큐를 순서대로 비우는 가장 단순한 구조(`core/task_queue.py`)를 쓴다 — 처리량보다 정확성이 우선이다.
+
+**인증 설계**: Olma는 읽기 전용 도구가 아니라 로그인된 브라우저 세션으로 클릭/입력까지 하는 action-taking 에이전트다. 그래서 사용자 계정 시스템 대신 단일 공유 API 키(`OLMA_API_KEY`)로 충분하다고 보았다 — `/health`·`/`만 인증 없이 열려 있고 나머지 `/api/*`는 키가 설정된 순간부터 막힌다. 로컬에서만 쓸 거라면 비워두면 된다.
+
+## Docker로 실행
+
+Ollama까지 포함한 전체 스택을 컨테이너로 띄울 수 있다.
+
+```bash
+cd olma
+OLMA_API_KEY=원하는키 docker compose up --build
+```
+
+`docker-compose.yml`은 `olma`(API 서버, 헤드리스 브라우저)와 `ollama` 두 서비스로 구성되며, `storage/`(메모리·브라우저 프로필·스크린샷)와 Ollama 모델 데이터를 각각 named volume으로 유지한다. 최초 실행 후 컨테이너 안에서 모델을 받아야 한다: `docker compose exec ollama ollama pull qwen2.5:7b`.
 
 ## Planner 출력 검증 & 폴백
 

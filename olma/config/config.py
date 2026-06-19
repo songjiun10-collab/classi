@@ -62,3 +62,14 @@ BROWSER_TIMEOUT = int(os.environ.get("BROWSER_TIMEOUT", "15000"))  # Playwright 
 # --- Logging ---
 LOG_PATH = os.environ.get("LOG_PATH", str(BASE_DIR / "storage" / "olma.log"))
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
+
+# --- API ---
+OLMA_API_HOST = os.environ.get("OLMA_API_HOST", "0.0.0.0")
+OLMA_API_PORT = int(os.environ.get("OLMA_API_PORT", "8800"))
+# 비워두면 인증 없음(로컬 단일 사용자 전제). 네트워크로 노출할 때는 반드시 설정할 것 —
+# Olma는 읽기 전용 도구가 아니라 로그인된 브라우저 세션으로 클릭/입력까지 하는
+# action-taking 에이전트라, 인증 없는 네트워크 노출은 단순 정보 유출보다 위험하다.
+OLMA_API_KEY = os.environ.get("OLMA_API_KEY", "")
+
+# --- Task Queue ---
+TASK_QUEUE_MAX_TASKS = int(os.environ.get("TASK_QUEUE_MAX_TASKS", "200"))
