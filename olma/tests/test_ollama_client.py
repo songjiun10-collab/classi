@@ -57,3 +57,19 @@ def test_generate_omits_format_and_options_when_not_given(dummy_ollama_server):
     payload = _RecordingHandler.captured
     assert "format" not in payload
     assert "options" not in payload
+
+
+def test_generate_sends_images_when_given(dummy_ollama_server):
+    oc = dummy_ollama_server
+    oc.generate("이 이미지를 설명해라", images=["YmFzZTY0aW1n"])
+
+    payload = _RecordingHandler.captured
+    assert payload["images"] == ["YmFzZTY0aW1n"]
+
+
+def test_generate_omits_images_when_not_given(dummy_ollama_server):
+    oc = dummy_ollama_server
+    oc.generate("hello")
+
+    payload = _RecordingHandler.captured
+    assert "images" not in payload

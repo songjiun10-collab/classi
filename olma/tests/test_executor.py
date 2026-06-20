@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, patch
 
+from config.config import BROWSER_USER_DATA_DIR
 from core.schema import EXTERNAL_DATA_BEGIN, EXTERNAL_DATA_END, MAX_INPUT_CHARS
 from executor.executor import _substitute_dependency, _wrap_external, execute_steps
 
@@ -76,6 +77,21 @@ def test_execute_steps_multistep_with_browser_and_dependency():
     assert [r["status"] for r in results] == ["ok", "ok", "ok"]
     assert results[-1]["result"] == "요약 결과"
     mock_browser.open.assert_called_once_with("https://example.com")
+
+
+def test_execute_steps_passes_profile_slot_to_browser_user_data_dir():
+    mock_browser = MagicMock()
+    mock_browser.get_text.return_value = "page content"
+
+    steps = [{"action": "browser_get_text", "input": "", "depends_on": None}]
+    with patch("executor.executor.Browser", return_value=mock_browser) as browser_cls, patch(
+        "executor.executor.resolve_profile_dir", return_value="/tmp/profile_worker2"
+    ) as resolve:
+        results = execute_steps(steps, profile_slot=2)
+
+    assert results[0]["status"] == "ok"
+    resolve.assert_called_once_with(BROWSER_USER_DATA_DIR, 2)
+    browser_cls.assert_called_once_with(user_data_dir="/tmp/profile_worker2")
 
 
 def test_execute_steps_retries_then_succeeds():

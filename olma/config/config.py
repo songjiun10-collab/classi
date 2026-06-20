@@ -52,6 +52,10 @@ WEB_AI_AUTO_ESCALATE = os.environ.get("WEB_AI_AUTO_ESCALATE", "false").strip().l
 
 # --- OCR ---
 TESSERACT_LANG = os.environ.get("TESSERACT_LANG", "kor+eng")
+# 비워두면(기본) VLM 폴백 비활성. tesseract가 빈 문자열을 반환할 때만(스캔 품질 문제 등)
+# 이 Ollama 비전 모델로 한 번 더 시도한다(예: "qwen2.5vl:7b", "llava:13b").
+# 로컬 Ollama 모델명이므로 외부 클라우드 호출을 추가하지 않는다.
+OCR_VLM_MODEL = os.environ.get("OCR_VLM_MODEL", "")
 
 # --- Executor ---
 RETRY_COUNT = int(os.environ.get("RETRY_COUNT", "2"))  # step당 추가 재시도 횟수 (1~3 권장)
@@ -73,6 +77,10 @@ OLMA_API_KEY = os.environ.get("OLMA_API_KEY", "")
 
 # --- Task Queue ---
 TASK_QUEUE_MAX_TASKS = int(os.environ.get("TASK_QUEUE_MAX_TASKS", "200"))
+# 기본 1 = 기존과 동일한 완전 직렬 처리. 1보다 크게 설정하면 워커마다 독립된 브라우저
+# 프로필 디렉터리(첫 실행 시 기존 프로필을 복사해 로그인 세션을 물려받음)를 써서
+# Playwright의 launch_persistent_context 프로필 잠금 충돌 없이 동시 실행한다.
+TASK_QUEUE_WORKERS = int(os.environ.get("TASK_QUEUE_WORKERS", "1"))
 
 # --- Task Store (SQLite, task 기록 영속화 — 재시작 시 히스토리 보존 목적.
 # 처리 중이던 task는 안전하게 재개할 수 없으므로 재시작 시 failed로 전환된다) ---

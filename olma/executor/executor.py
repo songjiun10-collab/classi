@@ -8,12 +8,18 @@ Playwright 동작 timeout)에서 적용한다 — Playwright sync 객체를 스�
 강제 중단하면 브라우저 상태가 깨지기 때문(과도한 추상화/취약성 회피)."""
 import time
 
-from config.config import OLLAMA_TEMPERATURE_DEFAULT, RETRY_BACKOFF, RETRY_COUNT, STEP_TIMEOUT
+from config.config import (
+    BROWSER_USER_DATA_DIR,
+    OLLAMA_TEMPERATURE_DEFAULT,
+    RETRY_BACKOFF,
+    RETRY_COUNT,
+    STEP_TIMEOUT,
+)
 from core import notifier, router, web_ai_providers
 from core.logger import get_logger
 from core.schema import EXTERNAL_DATA_BEGIN, EXTERNAL_DATA_END, MAX_INPUT_CHARS
 from llm import ollama_client
-from tools.browser import Browser
+from tools.browser import Browser, resolve_profile_dir
 
 log = get_logger("executor")
 
@@ -215,17 +221,20 @@ def _run_step(i: int, raw_step: dict, results_by_index: dict, browser: Browser) 
     }
 
 
-def execute_steps(steps: list) -> list:
+def execute_steps(steps: list, profile_slot: int = 0) -> list:
+    """profile_slot은 작업 큐의 워커 인덱스다(core/task_queue.py). 0(기본값)이면 기존
+    브라우저 프로필을 그대로 쓰고, 그 외에는 워커 전용 프로필로 격리해 여러 워커가
+    동시에 Playwright 영구 프로필을 열어도 충돌하지 않게 한다."""
     results = []
     results_by_index = {}
     browser = None
     needs_browser = any(_step_needs_browser(s) for s in steps)
 
-    log.info("실행 시작: step %d개 (browser 필요=%s)", len(steps), needs_browser)
+    log.info("실행 시작: step %d개 (browser 필요=%s, profile_slot=%d)", len(steps), needs_browser, profile_slot)
 
     try:
         if needs_browser:
-            browser = Browser()
+            browser = Browser(user_data_dir=resolve_profile_dir(BROWSER_USER_DATA_DIR, profile_slot))
             browser.__enter__()
 
         for i, raw_step in enumerate(steps):

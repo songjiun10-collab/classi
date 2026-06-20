@@ -64,6 +64,7 @@ python main.py
 | `WEB_AI_WAIT_MS` | `30000` | 프롬프트 전송 후 응답 안정화 대기 상한(ms) |
 | `WEB_AI_AUTO_ESCALATE` | `false` | `true`로 켜면 Planner가 사용자의 명시적 요청 없이도 "로컬 LLM 능력을 넘는 고난도 작업"이라고 판단할 때 `web_ai_ask`를 스스로 선택할 수 있게 한다 |
 | `TESSERACT_LANG` | `kor+eng` | OCR 인식 언어 |
+| `OCR_VLM_MODEL` | (없음) | tesseract 결과가 비었을 때(스캔 품질 문제 등) 한 번 더 시도할 로컬 Ollama 비전 모델명(예: `qwen2.5vl:7b`). 비워두면 VLM 폴백 비활성 |
 | `RETRY_COUNT` | `2` | step 실패 시 추가 재시도 횟수 (1~3 권장) |
 | `RETRY_BACKOFF` | `0.5` | 재시도 사이 대기(초), 시도마다 2배 증가 |
 | `STEP_TIMEOUT` | `60` | step 1회 실행 제한시간(초, Ollama 요청에 적용) |
@@ -75,6 +76,7 @@ python main.py
 | `OLMA_API_PORT` | `8800` | HTTP API 바인드 포트 |
 | `OLMA_API_KEY` | (없음) | 설정하면 모든 `/api/*` 요청에 `X-API-Key` 헤더 검증을 강제한다. 비워두면 인증 없음(로컬 단일 사용자 전제) — 네트워크로 노출할 때는 반드시 설정할 것 |
 | `TASK_QUEUE_MAX_TASKS` | `200` | 작업 큐가 메모리에 보관하는 완료/실패 작업 기록 상한(초과분은 오래된 것부터 제거, 진행 중 작업은 보존) |
+| `TASK_QUEUE_WORKERS` | `1` | 작업 큐 워커 스레드 수. 1보다 크게 설정하면 워커마다 독립된 브라우저 프로필(첫 실행 시 기존 프로필을 복사해 로그인 세션을 물려받음)을 써서 Playwright 프로필 잠금 충돌 없이 병렬 처리한다 |
 | `TASK_STORE_PATH` | `storage/tasks.db` | task 기록을 영속화할 SQLite 파일 경로. 재시작 시 히스토리를 복원하지만, 그 시점에 `queued`/`processing`이던 task는 재개 불가로 판단해 `failed`로 정리한다 |
 | `WEB_AI_PROVIDERS_PATH` | (없음) | 여러 웹 AI 제공자를 등록한 JSON 파일 경로. 비워두면 위 `WEB_AI_*` 단일 설정을 `"default"` 제공자 하나로만 사용한다(하위 호환) |
 
@@ -101,7 +103,7 @@ python -m uvicorn api.server:app --host 0.0.0.0 --port 8800
 | GET | `/api/memory/search?q=키워드&limit=10` | task 텍스트/step의 action·result에 키워드가 포함된 기록 검색(대소문자 무시, 최신순) | 〃 |
 | GET | `/api/metrics` | 큐 깊이, 가동시간, 상태별 작업 수 | 〃 |
 
-**왜 큐가 직렬(단일 워커)인가**: Playwright는 로그인 세션을 유지하는 영구 브라우저 프로필을 전제로 한다. 여러 작업을 동시에 실행하면 같은 브라우저를 두 코드가 동시에 조작해 세션이 깨지므로, Redis/Celery 같은 분산 큐 대신 워커 스레드 1개가 큐를 순서대로 비우는 가장 단순한 구조(`core/task_queue.py`)를 쓴다 — 처리량보다 정확성이 우선이다.
+**왜 큐가 기본적으로 직렬(단일 워커)인가**: Playwright는 로그인 세션을 유지하는 영구 브라우저 프로필을 전제로 한다. 같은 프로필 디렉터리를 두 코드가 동시에 열면 충돌하므로, Redis/Celery 같은 분산 큐 대신 기본은 워커 스레드 1개가 큐를 순서대로 비우는 가장 단순한 구조(`core/task_queue.py`)를 쓴다 — 처리량보다 정확성이 우선이다. `TASK_QUEUE_WORKERS`를 1보다 크게 설정하면 워커마다 독립된 브라우저 프로필을 써서 충돌 없이 병렬로 처리할 수 있다.
 
 **인증 설계**: Olma는 읽기 전용 도구가 아니라 로그인된 브라우저 세션으로 클릭/입력까지 하는 action-taking 에이전트다. 그래서 사용자 계정 시스템 대신 단일 공유 API 키(`OLMA_API_KEY`)로 충분하다고 보았다 — `/health`·`/`만 인증 없이 열려 있고 나머지 `/api/*`는 키가 설정된 순간부터 막힌다. 로컬에서만 쓸 거라면 비워두면 된다.
 

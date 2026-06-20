@@ -86,6 +86,27 @@ def test_malformed_json_falls_back_to_default_only(tmp_path, monkeypatch):
     assert wap.provider_names() == ["default"]
 
 
+def test_loads_array_valued_selectors_as_is(tmp_path, monkeypatch):
+    path = tmp_path / "providers.json"
+    path.write_text(
+        json.dumps(
+            {
+                "chatgpt": {
+                    "url": "https://chatgpt.test",
+                    "input_selector": ["#prompt", "textarea"],
+                    "response_selector": [".answer", ".message"],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    wap = _fresh_module(monkeypatch, providers_path=str(path))
+
+    provider = wap.get_provider("chatgpt")
+    assert provider["input_selector"] == ["#prompt", "textarea"]
+    assert provider["response_selector"] == [".answer", ".message"]
+
+
 def test_get_provider_raises_for_unknown_name(monkeypatch):
     wap = _fresh_module(monkeypatch)
     try:

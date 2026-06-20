@@ -11,15 +11,19 @@ def generate(
     format: dict | str | None = None,
     temperature: float | None = None,
     seed: int | None = None,
+    images: list[str] | None = None,
 ) -> str:
     """Ollama에 단일 프롬프트를 보내고 생성된 텍스트를 반환한다. 실패 시 1회 재시도.
 
     format을 주면 해당 JSON 스키마로 출력이 강제된다(grammar-constrained decoding).
     temperature/seed를 주면 결정론적 출력을 위한 옵션으로 전달된다.
+    images를 주면(base64 인코딩된 문자열 리스트) 비전 모델 입력으로 전달된다.
     """
     payload = {"model": model, "prompt": prompt, "stream": False}
     if format is not None:
         payload["format"] = format
+    if images is not None:
+        payload["images"] = images
 
     options = {}
     if temperature is not None:

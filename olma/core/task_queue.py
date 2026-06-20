@@ -1,15 +1,17 @@
-"""HTTP로 들어오는 요청을 직렬로 처리하는 인프로세스 작업 큐.
+"""HTTP로 들어오는 요청을 처리하는 인프로세스 작업 큐.
 
-Playwright는 영구 프로필(로그인 세션)을 쓰는 단일 브라우저 컨텍스트를 전제하므로,
-여러 작업을 동시에 실행하면 같은 브라우저를 두 코드가 동시에 조작해 세션이 깨진다.
-그래서 Redis/Celery 같은 분산 큐 대신, 워커 스레드 1개가 큐를 순서대로 비우는
-가장 단순한 형태로 직렬성을 보장한다(main.py REPL의 plan→execute→save 흐름과 동일)."""
+Playwright는 영구 프로필(로그인 세션)을 쓰는 브라우저 컨텍스트를 전제하므로, 같은
+프로필 디렉터리를 두 코드가 동시에 열면 충돌한다. 그래서 Redis/Celery 같은 분산 큐
+대신, 기본은 워커 스레드 1개가 큐를 순서대로 비우는 가장 단순한 형태로 직렬성을
+보장한다(main.py REPL의 plan→execute→save 흐름과 동일). `TASK_QUEUE_WORKERS`를
+1보다 크게 설정하면 워커마다 독립된 브라우저 프로필(tools/browser.resolve_profile_dir)을
+써서 충돌 없이 병렬로 처리한다."""
 import queue
 import threading
 import uuid
 from datetime import datetime, timezone
 
-from config.config import TASK_QUEUE_MAX_TASKS
+from config.config import TASK_QUEUE_MAX_TASKS, TASK_QUEUE_WORKERS
 from core import memory, task_store
 from core.logger import get_logger
 from core.planner import plan
@@ -27,8 +29,12 @@ class TaskQueue:
         self._queue: "queue.Queue[str]" = queue.Queue()
         self._lock = threading.Lock()
         self._restore_from_store()
-        self._worker = threading.Thread(target=self._run_worker, daemon=True)
-        self._worker.start()
+        self._workers = [
+            threading.Thread(target=self._run_worker, args=(i,), daemon=True)
+            for i in range(TASK_QUEUE_WORKERS)
+        ]
+        for worker in self._workers:
+            worker.start()
 
     def _restore_from_store(self):
         """재시작 시 히스토리를 복원한다. 재개가 아니라 기록 보존이 목적이므로,
@@ -95,11 +101,11 @@ class TaskQueue:
             else:
                 break  # 제거 가능한 종료 상태 task가 없음(전부 처리 중)
 
-    def _run_worker(self):
+    def _run_worker(self, worker_index: int = 0):
         while True:
             task_id = self._queue.get()
             try:
-                self._process(task_id)
+                self._process(task_id, worker_index)
             except Exception as exc:
                 log.error("작업 처리 중 예상치 못한 예외: %s (%s)", task_id, exc)
                 with self._lock:
@@ -108,7 +114,7 @@ class TaskQueue:
                         self._tasks[task_id]["error"] = str(exc)
                         self._safe_upsert(self._tasks[task_id])
 
-    def _process(self, task_id: str):
+    def _process(self, task_id: str, worker_index: int = 0):
         with self._lock:
             task = self._tasks.get(task_id)
             if task is None:
@@ -128,7 +134,7 @@ class TaskQueue:
                 self._safe_upsert(self._tasks[task_id])
             return
 
-        results = execute_steps(steps)
+        results = execute_steps(steps, profile_slot=worker_index)
         record = memory.save(user_input, results)
         with self._lock:
             self._tasks[task_id]["status"] = "completed"

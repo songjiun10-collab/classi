@@ -1,4 +1,5 @@
 import importlib
+import threading
 import time
 from unittest.mock import patch
 
@@ -226,6 +227,44 @@ def test_evict_old_tasks_also_removes_from_store():
 
     remaining_ids = {t["task_id"] for t in task_store.load_all()}
     assert remaining_ids == {"t2", "t3", "t4"}
+
+
+def test_taskqueue_runs_multiple_workers_concurrently_when_configured():
+    slots_used = []
+    lock = threading.Lock()
+
+    def slow_execute(steps, profile_slot=0):
+        with lock:
+            slots_used.append(profile_slot)
+        time.sleep(0.2)
+        return []
+
+    with patch("core.task_queue.TASK_QUEUE_WORKERS", 3), patch(
+        "core.task_queue.plan", return_value=[{"action": "llm", "input": "hi"}]
+    ), patch("core.task_queue.execute_steps", side_effect=slow_execute), patch(
+        "core.task_queue.memory.save", return_value={"status": "done"}
+    ), patch("core.task_queue.memory.get_context", return_value=""):
+        tq = TaskQueue()
+        start = time.monotonic()
+        ids = [tq.submit(f"작업{i}") for i in range(3)]
+        for tid in ids:
+            _wait_until_terminal(tq, tid)
+        elapsed = time.monotonic() - start
+
+    # 3개 작업이 각각 0.2초 걸리지만 워커 3개가 동시에 처리하므로
+    # 완전 직렬(0.6초)보다 훨씬 짧게 끝나야 한다.
+    assert elapsed < 0.5
+    assert sorted(slots_used) == [0, 1, 2]
+
+
+def test_taskqueue_default_worker_count_is_serial():
+    with patch("core.task_queue.plan", return_value=[]), patch(
+        "core.task_queue.execute_steps", return_value=[]
+    ), patch("core.task_queue.memory.save", return_value={"status": "done"}), patch(
+        "core.task_queue.memory.get_context", return_value=""
+    ):
+        tq = TaskQueue()
+        assert len(tq._workers) == 1
 
 
 def test_depth_reflects_queued_items_not_yet_processed():
