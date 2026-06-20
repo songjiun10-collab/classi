@@ -1,0 +1,24 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  olma:
+    build: .
+    depends_on:
+      - ollama
+    ports:
+      - "8800:8800"
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - OLMA_API_KEY=${OLMA_API_KEY:-}
+      - BROWSER_HEADLESS=true
+    volumes:
+      - olma_storage:/app/storage
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  olma_storage:

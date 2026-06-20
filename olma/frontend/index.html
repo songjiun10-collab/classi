@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Olma</title>
+<style>
+:root{
+  --canvas:#faf9f5;--surface:#f5f0e8;--card:#efe9de;--sep:#e6dfd8;
+  --ink:#141413;--text-2:#3d3d3a;--text-3:#6c6a64;
+  --accent:#006241;--accent-hover:#00754a;
+  --ok:#006241;--fail:#c64545;--warn:#cba258;--muted:#8e8b82;
+  --f:-apple-system,BlinkMacSystemFont,"Helvetica Neue",system-ui,sans-serif;
+  --f-mono:ui-monospace,"SF Mono",Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--canvas);color:var(--ink);font-family:var(--f);line-height:1.5;padding:32px 24px 80px}
+.wrap{max-width:760px;margin:0 auto}
+h1{font-size:22px;font-weight:700;margin-bottom:4px}
+.sub{color:var(--text-3);font-size:13px;margin-bottom:24px}
+.card{background:var(--card);border:1px solid var(--sep);border-radius:12px;padding:18px;margin-bottom:18px}
+label{display:block;font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:6px}
+input[type=text],input[type=password],textarea{
+  width:100%;background:var(--canvas);border:1px solid var(--sep);border-radius:8px;
+  padding:10px 12px;font:inherit;font-size:14px;color:var(--ink);resize:vertical
+}
+textarea{min-height:72px}
+.row{display:flex;gap:10px;align-items:flex-end}
+.row > div{flex:1}
+button{font:inherit;font-size:14px;font-weight:600;color:#fff;background:var(--accent);
+  border:0;border-radius:8px;padding:10px 18px;cursor:pointer;white-space:nowrap}
+button:hover{background:var(--accent-hover)}
+button:disabled{background:var(--muted);cursor:not-allowed}
+.api-key-row{display:flex;gap:8px;margin-bottom:18px}
+.api-key-row input{flex:1}
+.api-key-row button{flex-shrink:0}
+small{color:var(--text-3);font-size:12px}
+.task{border:1px solid var(--sep);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:var(--canvas)}
+.task-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
+.task-input{font-size:14px;font-weight:500;flex:1;word-break:break-word}
+.badge{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;
+  padding:3px 8px;border-radius:999px;flex-shrink:0}
+.badge.queued,.badge.processing{background:rgba(203,162,88,.15);color:var(--warn)}
+.badge.completed{background:rgba(0,98,65,.1);color:var(--ok)}
+.badge.failed{background:rgba(198,69,69,.1);color:var(--fail)}
+.step{font-family:var(--f-mono);font-size:12px;color:var(--text-2);background:var(--surface);
+  border-radius:6px;padding:8px 10px;margin-top:6px;white-space:pre-wrap;word-break:break-word}
+.step .status{font-weight:700}
+.step .status.ok,.step .status.fallback{color:var(--ok)}
+.step .status.failed,.step .status.skipped{color:var(--fail)}
+.metrics{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--text-2)}
+.metrics b{color:var(--ink)}
+#err{color:var(--fail);font-size:13px;margin-top:8px;display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Olma</h1>
+  <p class="sub">자연어 요청 → 계획 → 실행. 작업은 한 번에 하나씩 순서대로 처리됩니다.</p>
+
+  <div class="api-key-row">
+    <input type="password" id="apiKey" placeholder="API 키 (OLMA_API_KEY를 설정하지 않았다면 비워두세요)">
+    <button id="saveKey">저장</button>
+  </div>
+
+  <div class="card">
+    <label for="taskInput">새 작업</label>
+    <textarea id="taskInput" placeholder="예: 파이썬 공식 홈페이지 열고 내용을 요약해줘"></textarea>
+    <div style="margin-top:10px;display:flex;justify-content:flex-end">
+      <button id="submitBtn">실행</button>
+    </div>
+    <div id="err"></div>
+  </div>
+
+  <div class="card">
+    <div class="metrics" id="metrics">로딩 중...</div>
+  </div>
+
+  <div class="card">
+    <label for="memSearch">기록 검색</label>
+    <div class="row">
+      <div><input type="text" id="memSearch" placeholder="작업/결과 키워드로 검색"></div>
+      <button id="memSearchBtn">검색</button>
+    </div>
+    <div id="memResults" style="margin-top:10px"></div>
+  </div>
+
+  <h2 style="font-size:15px;margin-bottom:10px">최근 작업</h2>
+  <div id="taskList"></div>
+</div>
+
+<script>
+const KEY_STORAGE = "olma_api_key";
+const apiKeyInput = document.getElementById("apiKey");
+const taskInput = document.getElementById("taskInput");
+const submitBtn = document.getElementById("submitBtn");
+const errBox = document.getElementById("err");
+const taskList = document.getElementById("taskList");
+const metricsBox = document.getElementById("metrics");
+
+apiKeyInput.value = localStorage.getItem(KEY_STORAGE) || "";
+
+document.getElementById("saveKey").addEventListener("click", () => {
+  localStorage.setItem(KEY_STORAGE, apiKeyInput.value);
+});
+
+function headers() {
+  const h = { "Content-Type": "application/json" };
+  const key = localStorage.getItem(KEY_STORAGE);
+  if (key) h["X-API-Key"] = key;
+  return h;
+}
+
+function showError(msg) {
+  errBox.textContent = msg;
+  errBox.style.display = msg ? "block" : "none";
+}
+
+async function submitTask() {
+  const text = taskInput.value.trim();
+  if (!text) return;
+  showError("");
+  submitBtn.disabled = true;
+  try {
+    const resp = await fetch("/api/task", {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({ input: text }),
+    });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      throw new Error(body.detail || `요청 실패 (${resp.status})`);
+    }
+    taskInput.value = "";
+    await refreshTasks();
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    submitBtn.disabled = false;
+  }
+}
+
+submitBtn.addEventListener("click", submitTask);
+taskInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submitTask();
+});
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
+function renderTask(task) {
+  const steps = (task.results || []).map((r) => {
+    const status = escapeHtml(r.status);
+    const action = escapeHtml(r.action || "?");
+    const result = escapeHtml(String(r.result ?? ""));
+    return `<div class="step"><span class="status ${status}">[${status}]</span> (${action}) ${result}</div>`;
+  }).join("");
+
+  return `
+    <div class="task">
+      <div class="task-head">
+        <div class="task-input">${escapeHtml(task.input)}</div>
+        <span class="badge ${escapeHtml(task.status)}">${escapeHtml(task.status)}</span>
+      </div>
+      ${task.error ? `<div class="step"><span class="status failed">error</span> ${escapeHtml(task.error)}</div>` : ""}
+      ${steps}
+    </div>`;
+}
+
+const memSearch = document.getElementById("memSearch");
+const memSearchBtn = document.getElementById("memSearchBtn");
+const memResults = document.getElementById("memResults");
+
+function renderMemoryRecord(rec) {
+  const steps = (rec.steps || []).map((s) => {
+    const status = escapeHtml(s.status || "");
+    const action = escapeHtml(s.action || "?");
+    const result = escapeHtml(String(s.result ?? ""));
+    return `<div class="step"><span class="status ${status}">[${status}]</span> (${action}) ${result}</div>`;
+  }).join("");
+
+  return `
+    <div class="task">
+      <div class="task-head">
+        <div class="task-input">${escapeHtml(rec.task)}</div>
+        <span class="badge ${escapeHtml(rec.status)}">${escapeHtml(rec.status)}</span>
+      </div>
+      ${steps}
+    </div>`;
+}
+
+async function searchMemory() {
+  const q = memSearch.value.trim();
+  if (!q) {
+    memResults.innerHTML = "";
+    return;
+  }
+  try {
+    const resp = await fetch(`/api/memory/search?q=${encodeURIComponent(q)}`, { headers: headers() });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      throw new Error(body.detail || `검색 실패 (${resp.status})`);
+    }
+    const records = await resp.json();
+    memResults.innerHTML = records.length
+      ? records.map(renderMemoryRecord).join("")
+      : '<small>일치하는 기록이 없습니다.</small>';
+  } catch (e) {
+    memResults.innerHTML = `<small>${escapeHtml(e.message)}</small>`;
+  }
+}
+
+memSearchBtn.addEventListener("click", searchMemory);
+memSearch.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") searchMemory();
+});
+
+async function refreshTasks() {
+  try {
+    const resp = await fetch("/api/tasks?limit=20", { headers: headers() });
+    if (!resp.ok) return;
+    const tasks = await resp.json();
+    taskList.innerHTML = tasks.length
+      ? tasks.map(renderTask).join("")
+      : '<small>아직 실행한 작업이 없습니다.</small>';
+  } catch (e) {
+    // 폴링 중 일시적 오류는 조용히 무시하고 다음 주기에 재시도
+  }
+}
+
+async function refreshMetrics() {
+  try {
+    const resp = await fetch("/api/metrics", { headers: headers() });
+    if (!resp.ok) return;
+    const m = await resp.json();
+    const byStatus = Object.entries(m.by_status || {})
+      .map(([k, v]) => `${escapeHtml(k)}: <b>${v}</b>`)
+      .join(" · ");
+    metricsBox.innerHTML = `
+      <span>큐 대기: <b>${m.queue_depth}</b></span>
+      <span>가동 시간: <b>${Math.round(m.uptime_seconds)}s</b></span>
+      <span>누적 작업: <b>${m.total_tasks_recorded}</b></span>
+      ${byStatus ? `<span>${byStatus}</span>` : ""}
+    `;
+  } catch (e) {
+    metricsBox.textContent = "메트릭을 불러오지 못했습니다.";
+  }
+}
+
+function tick() {
+  refreshTasks();
+  refreshMetrics();
+}
+
+tick();
+setInterval(tick, 3000);
+</script>
+</body>
+</html>
