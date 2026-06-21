@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Olma</title>
+<style>
+:root{
+  --canvas:#faf9f5;--surface:#f5f0e8;--card:#efe9de;--sep:#e6dfd8;
+  --ink:#141413;--text-2:#3d3d3a;--text-3:#6c6a64;
+  --accent:#006241;--accent-hover:#00754a;
+  --ok:#006241;--fail:#c64545;--warn:#cba258;--muted:#8e8b82;
+  --f:-apple-system,BlinkMacSystemFont,"Helvetica Neue",system-ui,sans-serif;
+  --f-mono:ui-monospace,"SF Mono",Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--canvas);color:var(--ink);font-family:var(--f);line-height:1.55;
+  display:flex;flex-direction:column;height:100vh}
+
+/* 상단 바 — 무엇이 떠 있는지 + 상태를 한 줄로 */
+.topbar{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--sep);
+  background:var(--canvas);flex-shrink:0}
+.brand{font-weight:700;font-size:16px}
+.brand .dot{color:var(--accent)}
+.status{margin-left:auto;font-size:12px;color:var(--text-3);display:flex;gap:14px}
+.status b{color:var(--ink);font-weight:600}
+.gear{background:none;border:0;cursor:pointer;color:var(--text-3);font-size:18px;padding:4px}
+.gear:hover{color:var(--ink)}
+.modelsel{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-3)}
+.modelsel select{font:inherit;font-size:12px;color:var(--ink);background:var(--surface);
+  border:1px solid var(--sep);border-radius:8px;padding:4px 8px;cursor:pointer;max-width:200px}
+.modelsel .label{color:var(--accent)}
+
+/* API 키 설정(접힘) */
+.settings{display:none;padding:10px 20px;border-bottom:1px solid var(--sep);background:var(--surface);
+  gap:8px;align-items:center}
+.settings.open{display:flex}
+.settings input{flex:1;background:var(--canvas);border:1px solid var(--sep);border-radius:8px;
+  padding:8px 10px;font:inherit;font-size:13px}
+.settings button{font:inherit;font-size:13px;font-weight:600;color:#fff;background:var(--accent);
+  border:0;border-radius:8px;padding:8px 14px;cursor:pointer}
+
+/* 대화 영역 */
+.scroll{flex:1;overflow-y:auto;padding:24px 0}
+.thread{max-width:760px;margin:0 auto;padding:0 20px;display:flex;flex-direction:column;gap:20px}
+
+.turn{display:flex;flex-direction:column;gap:8px}
+.who{font-size:12px;font-weight:700;color:var(--text-3);letter-spacing:.02em}
+.who.user{color:var(--accent)}
+.bubble{font-size:15px;white-space:pre-wrap;word-break:break-word}
+.user .bubble{background:var(--surface);border:1px solid var(--sep);border-radius:12px;padding:10px 14px}
+
+/* 실행 단계 = 도구 호출 카드 (CLI의 ● 라인과 동일한 시각 언어) */
+.step{display:flex;gap:8px;align-items:baseline;font-size:13px;padding:2px 0}
+.glyph{flex-shrink:0;font-size:11px;line-height:1.6}
+.glyph.ok,.glyph.fallback,.glyph.done,.glyph.completed{color:var(--ok)}
+.glyph.failed,.glyph.rejected{color:var(--fail)}
+.glyph.partial,.glyph.processing,.glyph.queued{color:var(--warn)}
+.glyph.skipped{color:var(--muted)}
+.action{font-weight:600;font-family:var(--f-mono);font-size:12px}
+.result{color:var(--text-2);word-break:break-word}
+.result.err{color:var(--fail)}
+.finalstatus{font-size:12px;color:var(--text-3);margin-top:2px}
+.finalstatus .g{font-weight:700}
+.finalstatus .g.done,.finalstatus .g.completed{color:var(--ok)}
+.finalstatus .g.failed,.finalstatus .g.partial{color:var(--fail)}
+
+.sys{font-family:var(--f-mono);font-size:12.5px;color:var(--text-2);background:var(--surface);
+  border:1px solid var(--sep);border-left:3px solid var(--accent);border-radius:8px;
+  padding:10px 12px;white-space:pre-wrap}
+.empty{color:var(--text-3);font-size:14px;text-align:center;padding:48px 0}
+.empty .hint{margin-top:8px;font-size:13px}
+.empty code{font-family:var(--f-mono);background:var(--surface);padding:1px 6px;border-radius:5px}
+
+/* 입력 바 — 하단 고정, Claude Code의 단일 입력처럼 */
+.composer{flex-shrink:0;border-top:1px solid var(--sep);background:var(--canvas);padding:14px 20px}
+.composer-inner{max-width:760px;margin:0 auto;position:relative}
+textarea{width:100%;background:var(--canvas);border:1px solid var(--sep);border-radius:12px;
+  padding:12px 90px 12px 14px;font:inherit;font-size:15px;color:var(--ink);resize:none;
+  min-height:48px;max-height:200px;line-height:1.5}
+textarea:focus{outline:none;border-color:var(--accent)}
+.send{position:absolute;right:8px;bottom:8px;font:inherit;font-size:14px;font-weight:600;color:#fff;
+  background:var(--accent);border:0;border-radius:9px;padding:8px 16px;cursor:pointer}
+.send:hover{background:var(--accent-hover)}
+.send:disabled{background:var(--muted);cursor:not-allowed}
+.hintbar{max-width:760px;margin:6px auto 0;font-size:11.5px;color:var(--text-3);display:flex;gap:14px}
+.hintbar code{font-family:var(--f-mono)}
+#err{color:var(--fail);font-size:13px;margin-top:6px;display:none;max-width:760px;margin-left:auto;margin-right:auto}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <span class="brand">Olma<span class="dot">.</span></span>
+  <div class="status" id="status"></div>
+  <div class="modelsel"><span class="label">모델</span>
+    <select id="modelSel" title="작업에 쓸 모델 선택"></select></div>
+  <button class="gear" id="gear" title="설정">⚙</button>
+</div>
+<div class="settings" id="settings">
+  <input type="password" id="apiKey" placeholder="API 키 (OLMA_API_KEY 미설정이면 비워두세요)">
+  <button id="saveKey">저장</button>
+</div>
+
+<div class="scroll" id="scroll">
+  <div class="thread" id="thread"></div>
+</div>
+
+<div class="composer">
+  <div class="composer-inner">
+    <textarea id="input" rows="1" placeholder="할 일을 자연어로 입력하세요.  /help 로 명령 보기"></textarea>
+    <button class="send" id="send">실행</button>
+  </div>
+  <div class="hintbar">
+    <span><code>Enter</code> 실행</span>
+    <span><code>Shift+Enter</code> 줄바꿈</span>
+    <span><code>/help</code> 명령</span>
+  </div>
+  <div id="err"></div>
+</div>
+
+<script>
+const KEY_STORAGE = "olma_api_key";
+const $ = (id) => document.getElementById(id);
+const thread = $("thread"), scroll = $("scroll"), input = $("input"), sendBtn = $("send"), errBox = $("err");
+
+$("apiKey").value = localStorage.getItem(KEY_STORAGE) || "";
+$("gear").onclick = () => $("settings").classList.toggle("open");
+$("saveKey").onclick = () => { localStorage.setItem(KEY_STORAGE, $("apiKey").value); $("settings").classList.remove("open"); };
+
+function headers(){
+  const h = { "Content-Type": "application/json" };
+  const key = localStorage.getItem(KEY_STORAGE);
+  if (key) h["X-API-Key"] = key;
+  return h;
+}
+function esc(s){ return String(s).replace(/[&<>"']/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function showError(m){ errBox.textContent = m; errBox.style.display = m ? "block" : "none"; }
+function atBottom(){ return scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 60; }
+function scrollDown(){ scroll.scrollTop = scroll.scrollHeight; }
+
+const GLYPH = { ok:"●", fallback:"●", done:"●", completed:"●", failed:"●", rejected:"✗",
+                partial:"◐", processing:"◐", queued:"•", skipped:"○" };
+function glyph(s){ return GLYPH[s] || "•"; }
+
+// 클라이언트 슬래시 명령 — CLI와 같은 직관(외우지 않고 /help로 발견)
+let localMsgs = [];  // 슬래시 명령이 만든 일시적 시스템 메시지
+const COMMANDS = [
+  ["/help","명령 목록"], ["/status","작업 통계"], ["/search","기록 검색 (예: /search 배포)"],
+  ["/model","모델 선택 (예: /model llama3, /model default)"],
+  ["/backend","응답 백엔드 (auto/local/web)"],
+  ["/skill","스킬 보기/추가/실행 (예: /skill, /skill add 요약 ..., /skill 요약)"],
+  ["/clear","화면 지우기"],
+];
+
+async function runSlash(line){
+  const [name, ...rest] = line.slice(1).split(" ");
+  const arg = rest.join(" ").trim();
+  if (name === "clear"){ localMsgs = []; await refresh(true); return; }
+  if (name === "help"){
+    pushSys(COMMANDS.map(([n,d]) => `${n.padEnd(10)} ${d}`).join("\n")); return;
+  }
+  if (name === "status"){
+    const m = await (await fetch("/api/metrics",{headers:headers()})).json();
+    const by = Object.entries(m.by_status||{}).map(([k,v])=>`${k} ${v}`).join("  ");
+    pushSys(`큐 대기 ${m.queue_depth}\n누적 작업 ${m.total_tasks_recorded}\n가동 ${Math.round(m.uptime_seconds)}s\n${by}`);
+    return;
+  }
+  if (name === "search"){
+    if (!arg){ pushSys("사용법: /search <키워드>"); return; }
+    const recs = await (await fetch(`/api/memory/search?q=${encodeURIComponent(arg)}`,{headers:headers()})).json();
+    pushSys(recs.length ? recs.map(r=>`[${r.status}] ${r.task}`).join("\n") : `'${arg}' 일치 기록 없음`);
+    return;
+  }
+  if (name === "model"){
+    if (arg === "default" || arg === "reset" || arg === "기본"){ await setModel(""); pushSys("기본 모델로 되돌렸습니다."); return; }
+    if (!arg){
+      const m = await (await fetch("/api/models",{headers:headers()})).json();
+      const list = (m.installed||[]).map((n,i)=>`${n===m.current?"●":"○"} ${i+1}. ${n}`).join("\n");
+      pushSys(`현재 모델: ${m.current}${m.override?" (사용자 선택)":" (기본값)"}\n${list||"(Ollama 모델 목록 없음 — ollama serve 확인)"}\n바꾸려면: /model <이름>  되돌리려면: /model default`);
+      return;
+    }
+    await setModel(arg); await setBackend("local"); await loadModels(); pushSys(`모델을 변경했습니다: ${arg}`); return;
+  }
+  if (name === "backend"){
+    const [mode, ...pv] = (arg||"").toLowerCase().split(" ");
+    const provider = pv.join(" ").trim();
+    if (!["auto","local","web"].includes(mode)){ pushSys("사용법: /backend <auto|local|web> [웹제공자]"); return; }
+    await setBackend(mode);
+    if (mode === "web" && provider) await setWebProvider(provider);
+    await loadModels();
+    pushSys(`백엔드를 변경했습니다: ${mode}${mode==="web"&&provider?" ("+provider+")":""}`); return;
+  }
+  if (name === "skill"){
+    const skills = await (await fetch("/api/skills",{headers:headers()})).json();
+    if (!arg){
+      pushSys(skills.length
+        ? "스킬:\n" + skills.map(s=>`· ${s.name}  ${(s.description||s.body||"").slice(0,50)}`).join("\n") + "\n실행: /skill <이름>"
+        : "저장된 스킬이 없습니다. /skill add <이름> <내용> 으로 만드세요.");
+      return;
+    }
+    const [head, ...r2] = arg.split(" ");
+    const rest2 = r2.join(" ").trim();
+    if (head === "add"){
+      const [nm, ...b] = rest2.split(" ");
+      if (!nm || !b.join(" ").trim()){ pushSys("사용법: /skill add <이름> <작업 내용>"); return; }
+      await fetch("/api/skills",{method:"POST",headers:headers(),body:JSON.stringify({name:nm,body:b.join(" ").trim()})});
+      pushSys(`스킬을 저장했습니다: ${nm}`); return;
+    }
+    if (head === "rm" || head === "remove" || head === "삭제"){
+      const r = await fetch(`/api/skills/${encodeURIComponent(rest2)}`,{method:"DELETE",headers:headers()});
+      pushSys(r.ok ? `스킬을 삭제했습니다: ${rest2}` : `'${rest2}' 스킬이 없습니다.`); return;
+    }
+    const sk = skills.find(s=>s.name===head);
+    if (!sk){ pushSys(`'${head}' 스킬이 없습니다 — /skill 로 목록을 보세요.`); return; }
+    const resolved = rest2 ? `${sk.body} ${rest2}` : sk.body;
+    await fetch("/api/task",{method:"POST",headers:headers(),body:JSON.stringify({input:resolved})});
+    await refresh(true); return;
+  }
+  pushSys(`알 수 없는 명령: /${name} — /help 로 목록을 보세요`);
+}
+function pushSys(text){ localMsgs.push(text); renderLocal(); }
+function renderLocal(){
+  document.querySelectorAll(".sys-node").forEach(n=>n.remove());
+  for (const t of localMsgs){
+    const d = document.createElement("div");
+    d.className = "turn sys-node";
+    d.innerHTML = `<div class="sys">${esc(t)}</div>`;
+    thread.appendChild(d);
+  }
+  scrollDown();
+}
+
+function renderTurn(task){
+  const steps = (task.results || []).map((r)=>{
+    const st = esc(r.status||"");
+    return `<div class="step"><span class="glyph ${st}">${glyph(r.status)}</span>`
+      + `<span class="action">${esc(r.action||"?")}</span>`
+      + `<span class="result">${esc(String(r.result??""))}</span></div>`;
+  }).join("");
+  const errLine = task.error
+    ? `<div class="step"><span class="glyph failed">●</span><span class="result err">${esc(task.error)}</span></div>` : "";
+  const st = esc(task.status);
+  return `
+    <div class="turn user"><div class="who user">나</div><div class="bubble">${esc(task.input)}</div></div>
+    <div class="turn"><div class="who">Olma</div>
+      ${steps || errLine ? steps+errLine : `<div class="step"><span class="glyph ${st}">${glyph(task.status)}</span><span class="result">${st==="queued"||st==="processing"?"처리 중…":st}</span></div>`}
+      <div class="finalstatus"><span class="g ${st}">${glyph(task.status)} ${st}</span></div>
+    </div>`;
+}
+
+async function submit(){
+  const text = input.value.trim();
+  if (!text) return;
+  showError("");
+  input.value = ""; autosize();
+  if (text.startsWith("/")){ await runSlash(text); return; }
+  sendBtn.disabled = true;
+  try {
+    const resp = await fetch("/api/task",{ method:"POST", headers:headers(), body:JSON.stringify({input:text}) });
+    if (!resp.ok){ const b = await resp.json().catch(()=>({})); throw new Error(b.detail||`요청 실패 (${resp.status})`); }
+    await refresh(true);
+  } catch(e){ showError(e.message); }
+  finally { sendBtn.disabled = false; }
+}
+
+async function refresh(force){
+  try {
+    const stick = force || atBottom();
+    const tasks = await (await fetch("/api/tasks?limit=30",{headers:headers()})).json();
+    const ordered = tasks.slice().reverse();  // 오래된→최신 (대화 흐름)
+    thread.innerHTML = ordered.length
+      ? ordered.map(renderTurn).join("")
+      : `<div class="empty">아직 대화가 없습니다.
+           <div class="hint">예: <code>파이썬 공식 홈페이지 열고 요약해줘</code></div></div>`;
+    renderLocal();
+    if (stick) scrollDown();
+  } catch(e){ /* 폴링 일시 오류 무시 */ }
+}
+
+async function refreshStatus(){
+  try {
+    const m = await (await fetch("/api/metrics",{headers:headers()})).json();
+    $("status").innerHTML = `<span>큐 <b>${m.queue_depth}</b></span><span>작업 <b>${m.total_tasks_recorded}</b></span>`;
+  } catch(e){}
+}
+
+// 통합 모델 선택 — coworker처럼 '한 곳에서' 무료 옵션을 고른다: 자동 / 로컬 Ollama 모델 /
+// 웹 AI(브라우저). 상단 셀렉트와 /model·/backend 명령이 같은 API(/api/models·/api/model·
+// /api/backend)를 쓴다.
+const modelSel = $("modelSel");
+async function loadModels(){
+  try {
+    const m = await (await fetch("/api/models",{headers:headers()})).json();
+    let html = `<option value="auto">자동 (로컬/웹 자동 선택)</option>`;
+    const installed = m.installed || [];
+    if (installed.length){
+      html += `<optgroup label="로컬 (무료)">`
+        + installed.map(n=>`<option value="local:${esc(n)}">${esc(n)}</option>`).join("")
+        + `</optgroup>`;
+    }
+    // 웹 AI: 제공자별로 고를 수 있게 나열(무료 프리셋: chatgpt/claude/gemini/perplexity 등).
+    // 빈 'default'(WEB_AI_URL 미설정)는 about:blank만 뜨므로 목록에서 숨긴다.
+    const webProviders = (m.web_providers || []).filter(n => n !== "default");
+    if (webProviders.length){
+      html += `<optgroup label="웹 AI (무료·브라우저)">`
+        + webProviders.map(n=>`<option value="web:${esc(n)}">${esc(n)}</option>`).join("")
+        + `</optgroup>`;
+    }
+    modelSel.innerHTML = html;
+    // 현재 상태 반영
+    let sel = "auto";
+    if (m.backend_mode === "web") sel = "web:" + (m.web_active || webProviders[0] || "");
+    else if (m.backend_mode === "local") sel = "local:" + (m.override || m.current);
+    modelSel.value = sel;
+  } catch(e){ /* 서버 미가동 시 무시 */ }
+}
+async function setModel(name){
+  await fetch("/api/model",{method:"POST",headers:headers(),body:JSON.stringify({model:name})});
+}
+async function setBackend(mode){
+  await fetch("/api/backend",{method:"POST",headers:headers(),body:JSON.stringify({mode})});
+}
+async function setWebProvider(name){
+  await fetch("/api/web_provider",{method:"POST",headers:headers(),body:JSON.stringify({name})});
+}
+modelSel.addEventListener("change", async ()=>{
+  const v = modelSel.value;
+  if (v === "auto"){ await setBackend("auto"); await setModel(""); }
+  else if (v.startsWith("local:")){ await setBackend("local"); await setModel(v.slice(6)); }
+  else if (v.startsWith("web:")){ await setBackend("web"); await setWebProvider(v.slice(4)); }
+  await loadModels();
+});
+
+function autosize(){ input.style.height="auto"; input.style.height=Math.min(200,input.scrollHeight)+"px"; }
+input.addEventListener("input", autosize);
+// IME(한글 등) 조합 중 Enter는 글자 확정용이므로 전송하지 않는다(isComposing 가드).
+// 이게 없으면 조합 중 Enter가 전송→입력창 비움 직후 조합 문자가 다시 커밋돼 '안 비워진' 것처럼 보인다.
+input.addEventListener("keydown",(e)=>{
+  if(e.key==="Enter" && !e.shiftKey && !e.isComposing){ e.preventDefault(); submit(); }
+});
+sendBtn.onclick = submit;
+
+refresh(true); refreshStatus(); loadModels();
+setInterval(()=>{ refresh(false); refreshStatus(); }, 3000);
+</script>
+</body>
+</html>

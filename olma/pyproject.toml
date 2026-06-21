@@ -1,0 +1,46 @@
+[project]
+name = "olma"
+version = "0.2.0"
+description = "로컬 Ollama + Playwright + OCR 기반 자연어 작업 실행 에이전트"
+# from __future__ import annotations로 PEP604 유니온을 지연 평가하므로 3.9에서 동작한다.
+# (개발은 3.11+ 권장 — CI가 3.9/3.11/3.12를 모두 검증한다.)
+requires-python = ">=3.9"
+dependencies = [
+    "requests",
+    "playwright",
+    "pytesseract",
+    "Pillow",
+    "pydantic>=2.0,<3",
+    "fastapi",
+    "uvicorn",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "mypy"]
+
+[tool.pytest.ini_options]
+# 외부 의존(Ollama/Playwright/네트워크) 없이 도는 모킹 기반 스위트.
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py39"
+line-length = 110
+
+[tool.ruff.lint]
+# E/F(pyflakes·pycodestyle), I(import 정렬), UP(파이썬 업그레이드), B(버그 유발 패턴)
+select = ["E", "F", "I", "UP", "B"]
+# UP007: 런타임 평가 위치의 X | Y는 3.9에서 깨지므로 from __future__로 회피 중 — 규칙 끔.
+ignore = ["UP007"]
+
+[tool.ruff.lint.per-file-ignores]
+# 이 모듈들의 긴 줄은 LLM에 보내는 한국어 프롬프트 문자열(데이터)이라 줄바꿈하면
+# 프롬프트가 바뀐다 — E501만 면제한다.
+"core/notifier.py" = ["E501"]
+"core/planner.py" = ["E501"]
+"core/schema.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.9"
+ignore_missing_imports = true   # playwright/pytesseract 등 타입스텁 없는 외부 의존
+warn_unused_ignores = true
