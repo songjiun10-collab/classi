@@ -50,3 +50,21 @@ def test_route_policy_notifier_has_no_fallback():
 def test_route_policy_low_confidence_when_required_input_missing():
     policy = route_policy({"action": "browser_open", "input": ""})
     assert policy["confidence"] == "low"
+
+
+def test_route_policy_web_ai_latest_info_has_no_local_fallback():
+    # 최신·실시간 정보(search 분류)는 로컬로 폴백하면 옛 정보가 되므로 폴백을 끈다.
+    policy = route_policy({"action": "web_ai_ask", "input": "오늘 환율 알려줘"})
+    assert policy["target"] == "browser"
+    assert policy["fallback"] is None
+
+
+def test_route_policy_web_ai_non_search_keeps_local_fallback():
+    # 코딩/일반 web_ai_ask는 웹 AI 전멸 시 로컬 best-effort가 의미 있어 폴백 유지.
+    policy = route_policy({"action": "web_ai_ask", "input": "이 코드 리뷰 해줘"})
+    assert policy["fallback"] == "ollama"
+
+
+def test_route_policy_login_and_vision_have_no_fallback():
+    assert route_policy({"action": "login", "input": ""})["fallback"] is None
+    assert route_policy({"action": "vision_describe", "input": ""})["fallback"] is None

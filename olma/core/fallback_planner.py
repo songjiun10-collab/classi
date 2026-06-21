@@ -3,6 +3,8 @@
 LLM 플래너가 검증/복구에 모두 실패했을 때, 사용자 요청을 통째로 단일 llm step에
 던져버리는 대신(파괴적 폴백), 간단한 키워드 규칙으로 의미 있는 step을 만들어 준다.
 LLM을 전혀 호출하지 않으므로 LLM이 죽어 있어도 항상 동작한다(결정론적)."""
+from __future__ import annotations
+
 import re
 
 from core.schema import ActionType

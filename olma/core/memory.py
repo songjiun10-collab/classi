@@ -75,6 +75,7 @@ def _summarize_step(r: dict) -> dict:
     return {
         "action": r.get("action") or r.get("step", {}).get("action"),
         "target": r.get("target"),
+        "agent": r.get("agent"),      # 어느 에이전트가 실행했나(Agent Pool) — 경험 집계용(#46)
         "status": r.get("status"),
         "attempts": r.get("attempts"),
         "duration": r.get("duration"),
@@ -141,20 +142,43 @@ def get_context(n: int = 3) -> str:
     return "\n".join(lines)
 
 
+def successful_examples(keyword: str, n: int = 2) -> list:
+    """과거 'done' 작업 중 keyword와 관련된 것을 골라 플래너 few-shot 재료로 돌려준다.
+
+    실패/부분 성공 작업은 나쁜 예시가 되므로 제외한다. 반환: [{"task", "actions": [..]}].
+    플라이휠: 성공한 계획의 action 흐름을 다음 계획에 다시 주입해 일관성을 높인다."""
+    out = []
+    for rec in find(keyword, n=n * 5):  # 여유 있게 받아 done만 추린다
+        if rec.get("status") != "done":
+            continue
+        steps = rec.get("steps")
+        actions = [s.get("action") for s in steps if isinstance(s, dict)] if isinstance(steps, list) else []
+        actions = [a for a in actions if a]
+        if actions:
+            out.append({"task": rec.get("task", ""), "actions": actions})
+        if len(out) >= n:
+            break
+    return out
+
+
 def find(keyword: str, n: int = 10) -> list:
-    """task 텍스트 또는 step의 action/result에 keyword가 포함된 최근 레코드를
-    대소문자 구분 없이 검색해 최신순으로 돌려준다."""
+    """task 텍스트 또는 step(JSON으로 직렬화된 action/result 포함)에 keyword가 포함된
+    레코드를 최신순으로 돌려준다.
+
+    이전엔 load_all()로 전체 레코드(최대 MEMORY_MAX_RECORDS=1000건)를 로드 후 파이썬에서
+    필터링했다 — successful_examples()가 매 plan마다 이를 호출해 비용이 컸다. 이제 SQL
+    LIKE로 DB에서 직접 걸러 필요한 n건만 파싱한다(steps는 같은 행의 JSON 텍스트라 한 컬럼
+    검색으로 action/result까지 함께 매칭된다). SQLite LIKE는 ASCII 대소문자 무시이고
+    한국어는 대소문자가 없어 기존 동작과 동치다. '%','_','\\'는 와일드카드라 이스케이프한다."""
     if not keyword:
         return []
-    needle = keyword.lower()
-    matched = []
-    for rec in load_all():
-        haystacks = [str(rec.get("task", ""))]
-        steps = rec.get("steps")
-        if isinstance(steps, list):
-            for step in steps:
-                haystacks.append(str(step.get("action", "")))
-                haystacks.append(str(step.get("result", "")))
-        if any(needle in h.lower() for h in haystacks):
-            matched.append(rec)
-    return matched[-n:][::-1]
+    escaped = keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    like = f"%{escaped}%"
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT id, task, status, steps, timestamp, schema_version FROM memory "
+            "WHERE task LIKE ? ESCAPE '\\' OR steps LIKE ? ESCAPE '\\' "
+            "ORDER BY id DESC LIMIT ?",
+            (like, like, n),
+        ).fetchall()
+    return [_row_to_record(r) for r in rows]

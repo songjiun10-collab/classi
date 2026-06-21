@@ -24,3 +24,11 @@ olma/storage/*
 # 로컬 비밀·세션
 *.session
 .env
+
+# Agent/IDE files
+.claude/
+.opencode/
+opencode.jsonc
+.github-disabled/
+
+

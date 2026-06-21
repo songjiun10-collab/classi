@@ -2,7 +2,32 @@ from unittest.mock import MagicMock, patch
 
 from config.config import BROWSER_USER_DATA_DIR
 from core.schema import EXTERNAL_DATA_BEGIN, EXTERNAL_DATA_END, MAX_INPUT_CHARS
+from executor import executor
 from executor.executor import _substitute_dependency, _wrap_external, execute_steps
+
+
+def test_approval_rejection_marks_step_rejected_and_skips_dependents():
+    """승인 게이트가 거절하면 그 step은 rejected, 그에 의존하는 step은 skipped 되어야 한다."""
+    steps = [
+        {"action": "browser_click", "input": "#buy", "depends_on": None},
+        {"action": "summarize", "input": "{{result}}", "depends_on": 0},
+    ]
+    with patch.object(executor.approval, "guard", return_value=(False, "사용자가 거절함")), \
+         patch("executor.executor.Browser"):
+        results = execute_steps(steps)
+    assert results[0]["status"] == "rejected"
+    assert "사용자가 거절함" in results[0]["result"]
+    assert results[1]["status"] == "skipped"   # 거절된 step에 의존 → 스킵
+
+
+def test_approval_pass_runs_step_normally():
+    """게이트가 통과시키면(allowed) step은 평소대로 실행된다."""
+    steps = [{"action": "llm", "input": "안녕", "depends_on": None}]
+    with patch.object(executor.approval, "guard", return_value=(True, "")), \
+         patch("llm.ollama_client.generate", return_value="반가워"):
+        results = execute_steps(steps)
+    assert results[0]["status"] == "ok"
+    assert results[0]["result"] == "반가워"
 
 
 def test_wrap_external_wraps_with_delimiters():
@@ -47,16 +72,24 @@ def test_execute_steps_resolves_dependency_referencing_earlier_index():
         {"action": "llm", "input": "second", "depends_on": None},
         {"action": "summarize", "input": "combine: {{result}}", "depends_on": 0},
     ]
-    with patch(
-        "executor.executor.ollama_client.generate",
-        side_effect=["result-A", "result-B", "result-C"],
-    ) as gen:
+
+    # 내용 기반 mock: 독립 step 0/1은 병렬로 돌 수 있어 호출 순서가 비결정적이므로,
+    # 순서 의존 side_effect 대신 프롬프트 내용으로 응답을 결정해 결과 매핑을 고정한다.
+    def fake_generate(prompt, **kwargs):
+        if "combine" in prompt:        # summarize step (dep 0의 결과가 치환돼 들어옴)
+            return "result-C"
+        if "first" in prompt:
+            return "result-A"
+        return "result-B"              # "second"
+
+    with patch("executor.executor.ollama_client.generate", side_effect=fake_generate) as gen:
         results = execute_steps(steps)
 
     assert [r["status"] for r in results] == ["ok", "ok", "ok"]
+    # summarize는 의존성 때문에 항상 마지막(순차)에 실행된다.
     third_call_prompt = gen.call_args_list[2].args[0]
-    assert "result-A" in third_call_prompt
-    assert "result-B" not in third_call_prompt
+    assert "result-A" in third_call_prompt   # dep 0(=first)의 결과가 들어가야
+    assert "result-B" not in third_call_prompt  # dep 1(=second)의 결과는 아님
 
 
 def test_execute_steps_multistep_with_browser_and_dependency():
@@ -139,6 +172,81 @@ def test_execute_steps_dispatches_web_ai_ask_to_browser():
     assert mock_browser.ask_web_ai.call_args.args[0] == "안녕?"
 
 
+def test_web_ai_fails_over_to_backup_provider():
+    """첫 웹 AI(claude)가 실패하면 백업(zai)으로 페일오버해 성공한다."""
+    mock_browser = MagicMock()
+    mock_browser.ask_web_ai.side_effect = [RuntimeError("claude 막힘"), "zai 답변"]
+    chain = [
+        {"url": "https://claude.test", "input_selector": "#c", "submit_selector": "",
+         "response_selector": "body", "wait_ms": 1},
+        {"url": "https://z.ai", "input_selector": "#z", "submit_selector": "",
+         "response_selector": "body", "wait_ms": 1},
+    ]
+    steps = [{"action": "web_ai_ask", "input": "이 코드 봐줘", "depends_on": None}]
+    with patch("executor.executor.Browser", return_value=mock_browser), \
+         patch("executor.executor.web_ai_providers.resolve_chain", return_value=(chain, "이 코드 봐줘")):
+        results = execute_steps(steps)
+
+    assert results[0]["status"] == "ok"
+    assert results[0]["result"] == "zai 답변"
+    assert mock_browser.ask_web_ai.call_count == 2          # claude → zai
+    assert mock_browser.ask_web_ai.call_args_list[1].args[1] == "https://z.ai"
+
+
+def test_web_ai_all_providers_fail_then_local_fallback():
+    """체인이 전부 실패하면 라우터 폴백(로컬 reason 모델)이 받는다."""
+    mock_browser = MagicMock()
+    mock_browser.ask_web_ai.side_effect = RuntimeError("전부 막힘")
+    chain = [
+        {"url": "https://claude.test", "input_selector": "#c", "submit_selector": "",
+         "response_selector": "body", "wait_ms": 1},
+        {"url": "https://z.ai", "input_selector": "#z", "submit_selector": "",
+         "response_selector": "body", "wait_ms": 1},
+    ]
+    steps = [{"action": "web_ai_ask", "input": "질문", "depends_on": None}]
+    with patch("executor.executor.time.sleep"), \
+         patch("executor.executor.Browser", return_value=mock_browser), \
+         patch("executor.executor.web_ai_providers.resolve_chain", return_value=(chain, "질문")), \
+         patch("executor.executor.ollama_client.generate", return_value="로컬 폴백 답변"):
+        results = execute_steps(steps)
+
+    assert results[0]["status"] == "fallback"               # 로컬로 폴백
+    assert results[0]["result"] == "로컬 폴백 답변"
+
+
+def test_execute_steps_dispatches_vision_describe_to_browser():
+    mock_browser = MagicMock()
+    mock_browser.describe_screen.return_value = "화면엔 로그인 폼이 보인다"
+
+    steps = [{"action": "vision_describe", "input": "뭐가 보여?", "depends_on": None}]
+    with patch("executor.executor.Browser", return_value=mock_browser), \
+         patch("executor.executor.ai_roles.models_for", return_value=["vlm:7b", "vlm-backup"]):
+        results = execute_steps(steps)
+
+    assert results[0]["status"] == "ok"
+    assert results[0]["result"] == "화면엔 로그인 폼이 보인다"
+    # vision 체인의 1순위가 model로, 나머지가 fallback_models로 전달된다.
+    assert mock_browser.describe_screen.call_args.args[0] == "뭐가 보여?"
+    assert mock_browser.describe_screen.call_args.kwargs["model"] == "vlm:7b"
+    assert mock_browser.describe_screen.call_args.kwargs["fallback_models"] == ["vlm-backup"]
+
+
+def test_vision_describe_failure_does_not_fall_back_to_ollama():
+    """vision_describe는 실패해도 텍스트 ollama 폴백이 무의미(이미지 이해 불가)하므로 폴백 안 함."""
+    mock_browser = MagicMock()
+    mock_browser.describe_screen.side_effect = ValueError("VLM 미설정")
+
+    steps = [{"action": "vision_describe", "input": "", "depends_on": None}]
+    with patch("executor.executor.time.sleep"), \
+         patch("executor.executor.Browser", return_value=mock_browser), \
+         patch("executor.executor.ai_roles.model_for", return_value=""), \
+         patch("executor.executor.ollama_client.generate") as gen:
+        results = execute_steps(steps)
+
+    assert results[0]["status"] == "failed"
+    gen.assert_not_called()
+
+
 def test_execute_steps_records_failed_when_target_and_fallback_both_fail():
     mock_browser = MagicMock()
     mock_browser.search.side_effect = RuntimeError("브라우저 죽음")
@@ -204,10 +312,16 @@ def test_execute_steps_continues_when_router_raises_unexpectedly():
         {"action": "llm", "input": "first", "depends_on": None},
         {"action": "llm", "input": "second", "depends_on": None},
     ]
-    with patch(
-        "executor.executor.router.route_policy",
-        side_effect=[RuntimeError("라우터 폭발"), {"target": "ollama", "fallback": None, "confidence": "high"}],
-    ), patch("executor.executor.ollama_client.generate", return_value="두번째는 정상"):
+    # 내용 기반 mock: 독립 step은 병렬로 돌 수 있어 호출 순서가 비결정적이므로,
+    # step 입력으로 어느 step이 폭발할지 고정한다(순서 의존 side_effect 회피).
+    def fake_policy(step):
+        if step.get("input") == "first":
+            raise RuntimeError("라우터 폭발")
+        return {"target": "ollama", "fallback": None, "confidence": "high"}
+
+    with patch("executor.executor.router.route_policy", side_effect=fake_policy), patch(
+        "executor.executor.ollama_client.generate", return_value="두번째는 정상"
+    ):
         results = execute_steps(steps)
 
     assert results[0]["status"] == "failed"

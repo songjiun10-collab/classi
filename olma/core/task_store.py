@@ -99,3 +99,20 @@ def mark_interrupted_as_failed() -> None:
             "UPDATE tasks SET status = 'failed', error = ? WHERE status IN ('queued', 'processing')",
             (_INTERRUPTED_ERROR,),
         )
+
+
+def requeue_interrupted() -> list:
+    """재시작 시 한 번 호출(resume 모드): 중단된(queued/processing) task를 다시 'queued'로
+    되돌리고 그 task_id 목록을 반환한다. 호출부(task_queue)가 이 id들을 워커 큐에 다시 넣어
+    원래 입력으로 처음부터 재실행한다. mid-step 재개가 아니라 재시도형 재개다."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT task_id FROM tasks WHERE status IN ('queued', 'processing')"
+        ).fetchall()
+        ids = [r[0] for r in rows]
+        if ids:
+            conn.execute(
+                "UPDATE tasks SET status = 'queued', error = NULL "
+                "WHERE status IN ('queued', 'processing')"
+            )
+    return ids

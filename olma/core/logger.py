@@ -1,16 +1,33 @@
-"""Olma 공용 로거. 콘솔 + storage/olma.log 파일에 구조적으로 기록한다."""
+"""Olma 공용 로거. 콘솔 + storage/olma.log 파일에 구조적으로 기록한다.
+
+LOG_JSON=true면 한 줄 JSON으로 출력해 로그 수집/관측 도구가 파싱하기 쉽게 한다(기본은 텍스트)."""
+import json
 import logging
 import os
 
-from config.config import LOG_LEVEL, LOG_PATH
+from config.config import LOG_JSON, LOG_LEVEL, LOG_PATH
 
 _CONFIGURED = False
+
+
+class JsonFormatter(logging.Formatter):
+    """로그 레코드를 한 줄 JSON으로 직렬화한다(관측 도구 연동용)."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {
+            "time": self.formatTime(record),
+            "level": record.levelname,
+            "name": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            payload["exc"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=False)
 
 
 def get_logger(name: str = "olma") -> logging.Logger:
     """모듈에서 동일 설정의 로거를 받아 쓴다. 최초 1회만 핸들러를 붙인다."""
     global _CONFIGURED
-    logger = logging.getLogger(name)
 
     if not _CONFIGURED:
         level = getattr(logging, LOG_LEVEL.upper(), logging.INFO)
@@ -18,7 +35,9 @@ def get_logger(name: str = "olma") -> logging.Logger:
         root.setLevel(level)
         root.propagate = False
 
-        fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+        fmt = JsonFormatter() if LOG_JSON else logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+        )
 
         console = logging.StreamHandler()
         console.setFormatter(fmt)

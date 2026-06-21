@@ -1,4 +1,6 @@
 """알림(카톡 등) 읽기 + 분류 + 채널 추천. 자동 전송은 절대 하지 않는다 (V0.1 범위 제한)."""
+from __future__ import annotations
+
 from pydantic import BaseModel, ValidationError, field_validator
 
 from config.config import KAKAO_WEB_URL
@@ -53,7 +55,10 @@ def capture_kakao_messages(browser, url: str = KAKAO_WEB_URL) -> list:
         )
     browser.open(url)
     screenshot_path = browser.screenshot()
-    raw_text = ocr.image_to_text(screenshot_path)
+    # browser.py의 DOM-비었을 때 폴백과 동일하게 extract_text를 쓴다 — tesseract 결과가
+    # 비면(스캔 품질 문제 등) OCR_VLM_MODEL이 설정된 경우 로컬 VLM으로 한 번 더 시도한다.
+    # OCR_VLM_MODEL이 비어 있으면(기본값) image_to_text와 동작이 완전히 동일하다.
+    raw_text = ocr.extract_text(screenshot_path)
     return extract_messages(raw_text)
 
 

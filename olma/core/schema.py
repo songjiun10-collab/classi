@@ -23,6 +23,8 @@ class ActionType(str, Enum):
     BROWSER_SCREENSHOT = "browser_screenshot"
     WEB_AI_ASK = "web_ai_ask"
     NOTIFICATION_CHECK = "notification_check"
+    LOGIN = "login"
+    VISION_DESCRIBE = "vision_describe"
 
 
 ACTION_DESCRIPTIONS: dict[ActionType, str] = {
@@ -36,6 +38,8 @@ ACTION_DESCRIPTIONS: dict[ActionType, str] = {
     ActionType.BROWSER_SCREENSHOT: "현재 페이지 스크린샷 저장",
     ActionType.WEB_AI_ASK: "브라우저로 웹 AI 채팅을 열어 질문하고 답을 읽음 (input은 보낼 프롬프트). 사용 시점은 아래 'web_ai_ask 사용 정책'을 따른다",
     ActionType.NOTIFICATION_CHECK: "메시지(카톡 등) 읽고 분류/추천 (사용자가 메시지 확인을 명시적으로 요청했을 때만)",
+    ActionType.LOGIN: "등록된 사이트에 로그인 (input은 로그인 제공자 이름, 비우면 기본). 이미 로그인돼 있으면 건너뛰고, 풀렸으면 '구글로 로그인'으로 재로그인",
+    ActionType.VISION_DESCRIBE: "현재 화면을 비전 모델(VLM)로 이해/설명 (input은 보는 관점·질문, 비우면 화면 전반 설명). 글자 전사가 아니라 레이아웃·상태·의미 파악용. URL을 먼저 열려면 browser_open과 함께 쓴다",
 }
 
 

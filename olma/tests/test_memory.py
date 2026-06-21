@@ -14,7 +14,8 @@ def test_save_stores_task_state_with_steps(tmp_path, monkeypatch):
     memory = _fresh_memory(tmp_path, monkeypatch)
 
     results = [
-        {"action": "llm", "target": "ollama", "status": "ok", "attempts": 1, "duration": 0.1, "result": "답변"},
+        {"action": "llm", "target": "ollama", "status": "ok",
+         "attempts": 1, "duration": 0.1, "result": "답변"},
     ]
     record = memory.save("작업", results)
 
@@ -100,6 +101,26 @@ def test_find_returns_newest_match_first(tmp_path, monkeypatch):
 
     matched = memory.find("매치")
     assert [r["task"] for r in matched] == ["둘째 매치 작업", "첫 매치 작업"]
+
+
+def test_find_treats_wildcards_literally(tmp_path, monkeypatch):
+    """SQL LIKE 검색으로 바뀌었으므로 '%','_'가 와일드카드로 새지 않고 글자 그대로 매칭돼야 한다."""
+    memory = _fresh_memory(tmp_path, monkeypatch)
+    memory.save("50% 할인 정리", [{"action": "llm", "status": "ok"}])
+    memory.save("그냥 정리 작업", [{"action": "llm", "status": "ok"}])
+
+    matched = memory.find("50%")
+    assert [r["task"] for r in matched] == ["50% 할인 정리"]   # '%'가 모든것 매칭으로 새면 안 됨
+
+
+def test_find_respects_limit(tmp_path, monkeypatch):
+    memory = _fresh_memory(tmp_path, monkeypatch)
+    for i in range(5):
+        memory.save(f"공통 작업 {i}", [{"action": "llm", "status": "ok"}])
+
+    matched = memory.find("공통", n=2)
+    assert len(matched) == 2
+    assert [r["task"] for r in matched] == ["공통 작업 4", "공통 작업 3"]  # 최신순 n건
 
 
 def test_save_rotates_out_oldest_records_beyond_max(tmp_path, monkeypatch):

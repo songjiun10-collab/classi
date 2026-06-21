@@ -3,6 +3,7 @@
 기본 라우팅(action -> 실행 타겟)은 결정론적이지만, 그 위에 (1) 타겟 실패 시
 대체 타겟(fallback chain)과 (2) 입력 완결성 기반의 단순 confidence를 얹는다.
 confidence는 ML이 아니라 "필수 입력이 채워졌는가" 휴리스틱이다(과도한 추상화 회피)."""
+from core import web_ai_providers
 from core.schema import ActionType
 
 VALID_TARGETS = {"ollama", "browser", "notifier"}
@@ -16,6 +17,8 @@ _BROWSER_ACTIONS = {
     ActionType.BROWSER_GET_TEXT,
     ActionType.BROWSER_SCREENSHOT,
     ActionType.WEB_AI_ASK,
+    ActionType.LOGIN,
+    ActionType.VISION_DESCRIBE,
 }
 _NOTIFIER_ACTIONS = {ActionType.NOTIFICATION_CHECK}
 
@@ -42,8 +45,8 @@ def _parse_action(step: dict) -> ActionType:
     raw_action = step.get("action", "")
     try:
         return ActionType(raw_action)
-    except ValueError:
-        raise ValueError(f"알 수 없는 action: {raw_action!r}")
+    except ValueError as exc:
+        raise ValueError(f"알 수 없는 action: {raw_action!r}") from exc
 
 
 def route(step: dict) -> str:
@@ -70,8 +73,22 @@ def route_policy(step: dict) -> dict:
     has_input = bool(str(step.get("input", "")).strip())
     confidence = "low" if (action in _INPUT_REQUIRED and not has_input) else "high"
 
+    # login/vision_describe는 브라우저 액션이지만 실패해도 ollama 텍스트 폴백("아는 선에서
+    # 답해")이 무의미하다 — 로컬 텍스트 LLM은 로그인도, 화면(이미지) 이해도 못 한다.
+    # 거짓 성공처럼 보이지 않도록 이 둘은 폴백을 끈다.
+    _NO_FALLBACK = {ActionType.LOGIN, ActionType.VISION_DESCRIBE}
+    if action in _NO_FALLBACK:
+        fallback = None
+    elif action is ActionType.WEB_AI_ASK and web_ai_providers.classify(step.get("input", "")) == "search":
+        # 최신·실시간 정보는 로컬 지식 컷오프로 답하면 안 된다 — 웹 AI 체인이 모두 실패해도
+        # 로컬로 폴백하지 않고 실패로 둔다(엉뚱한 옛 정보 대신 명확한 실패). 코딩/추론 등
+        # 다른 web_ai_ask는 웹 AI 전멸 시 로컬 best-effort가 의미 있어 폴백을 유지한다.
+        fallback = None
+    else:
+        fallback = _FALLBACK_TARGET.get(target)
+
     return {
         "target": target,
-        "fallback": _FALLBACK_TARGET.get(target),
+        "fallback": fallback,
         "confidence": confidence,
     }

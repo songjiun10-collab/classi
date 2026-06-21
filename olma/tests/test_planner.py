@@ -1,12 +1,47 @@
 import json
 from unittest.mock import patch
 
-from core.planner import plan
+from core.planner import _build_prompt, _web_ai_policy_text, plan
 from core.schema import EXTERNAL_DATA_BEGIN
 
 
 def _valid_plan_json(steps):
     return json.dumps({"schema_version": 1, "steps": steps})
+
+
+def test_web_ai_policy_always_routes_latest_info_to_web_ai():
+    """escalate 설정과 무관하게, 최신·실시간 정보는 web_ai_ask로 가도록 정책에 명시돼야 한다."""
+    import core.planner as planner_mod
+
+    for flag in (True, False):
+        with patch.object(planner_mod, "WEB_AI_AUTO_ESCALATE", flag):
+            text = _web_ai_policy_text()
+        assert "최신" in text and "web_ai_ask" in text
+        assert "llm으로 답하지 마라" in text
+
+
+def test_build_prompt_includes_latest_info_rule():
+    prompt = _build_prompt("오늘 환율 알려줘")
+    assert "최신" in prompt and "web_ai_ask" in prompt
+
+
+def test_build_prompt_injects_long_term_facts():
+    prompt = _build_prompt("보고서 써줘", facts="- [preference] 보고서는 한국어로")
+    assert "장기 기억" in prompt
+    assert "보고서는 한국어로" in prompt
+
+
+def test_build_prompt_omits_facts_block_when_empty():
+    prompt = _build_prompt("아무거나")
+    assert "장기 기억" not in prompt
+
+
+def test_build_prompt_compresses_long_context():
+    huge = "맥락" * 5000   # CONTEXT_MAX_CHARS를 크게 초과
+    prompt = _build_prompt("요청", context=huge)
+    assert "생략" in prompt                      # 가운데가 압축됨
+    assert huge not in prompt                     # 원문 전체는 들어가지 않음
+    assert len(prompt) < len(huge)
 
 
 def test_plan_succeeds_on_first_valid_response():

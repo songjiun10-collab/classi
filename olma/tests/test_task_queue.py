@@ -24,12 +24,22 @@ def _isolated_storage(tmp_path, monkeypatch):
     타이밍과 무관하게 항상 임시 경로를 쓴다."""
     monkeypatch.setenv("TASK_STORE_PATH", str(tmp_path / "tasks.db"))
     monkeypatch.setenv("MEMORY_PATH", str(tmp_path / "memory.db"))
+    # task_queue는 이제 Memory Profile(profile)을 거치며 ltm/accounts/usage 스토어를
+    # 건드리므로, 실제 storage/ 오염을 막기 위해 함께 임시 경로로 격리한다.
+    monkeypatch.setenv("LTM_PATH", str(tmp_path / "ltm.db"))
+    monkeypatch.setenv("ACCOUNT_STORE_PATH", str(tmp_path / "accounts.db"))
+    monkeypatch.setenv("USAGE_STORE_PATH", str(tmp_path / "usage.db"))
     import config.config as cfg
     importlib.reload(cfg)
-    import core.task_store as task_store
-    importlib.reload(task_store)
-    import core.memory as memory
-    importlib.reload(memory)
+    for mod in ("core.task_store", "core.memory", "core.ltm_store", "core.long_term_memory",
+                "core.account_store", "core.accounts", "core.usage_store", "core.usage",
+                "core.profile"):
+        importlib.reload(importlib.import_module(mod))
+    # 이 모듈의 테스트들은 '계획 경로'(plan 호출·실패·복구·큐 깊이)를 검증하므로 간단질문
+    # fast-path를 끈다(켜져 있으면 단순 입력이 plan을 건너뛴다). fast-chat 동작은 아래
+    # test_fast_chat_* 와 test_triage.py에서 따로 검증한다.
+    import core.task_queue as task_queue
+    monkeypatch.setattr(task_queue, "FAST_CHAT", False)
 
 
 def _wait_until_terminal(tq, task_id, timeout=5):
@@ -105,6 +115,74 @@ def test_list_recent_returns_newest_first():
         recent = tq.list_recent(10)
 
     assert [t["task_id"] for t in recent][:2] == [id2, id1]
+
+
+def test_failed_task_auto_recovers_once_then_fails():
+    """TASK_AUTO_RECOVERY가 켜지면 실패 작업을 1회 재큐잉 후 최종 실패한다."""
+    calls = {"n": 0}
+
+    def boom(*a, **k):
+        calls["n"] += 1
+        raise RuntimeError("plan down")
+
+    with patch("core.task_queue.TASK_AUTO_RECOVERY", True), \
+         patch("core.task_queue.TASK_RECOVERY_MAX", 1), \
+         patch("core.task_queue.plan", side_effect=boom), \
+         patch("core.task_queue.profile.planner_context", return_value=("", "")), \
+         patch("core.task_queue.memory.successful_examples", return_value=[]):
+        tq = TaskQueue()
+        tid = tq.submit("작업")
+        task = _wait_until_terminal(tq, tid)
+
+    assert task["status"] == "failed"
+    assert task["recovery_count"] == 1
+    assert calls["n"] == 2          # 최초 + 복구 1회
+
+
+def test_failed_task_no_recovery_when_disabled():
+    """기본(복구 off)에선 실패 작업이 재큐잉 없이 곧장 failed."""
+    with patch("core.task_queue.plan", side_effect=RuntimeError("x")), \
+         patch("core.task_queue.profile.planner_context", return_value=("", "")), \
+         patch("core.task_queue.memory.successful_examples", return_value=[]):
+        tq = TaskQueue()
+        tid = tq.submit("작업")
+        task = _wait_until_terminal(tq, tid)
+
+    assert task["status"] == "failed"
+    assert task.get("recovery_count", 0) == 0
+
+
+def test_submit_orders_by_priority_then_fifo():
+    """우선순위 큐: priority가 낮을수록 먼저, 같은 priority면 제출 순서(FIFO)."""
+    import queue as _q
+
+    tq = TaskQueue.__new__(TaskQueue)   # 워커 없이 큐 동작만 검증
+    tq._tasks, tq._order, tq._seq = {}, [], 0
+    tq._lock = threading.Lock()
+    tq._queue = _q.PriorityQueue()
+
+    a = tq.submit("보통", priority=0)
+    b = tq.submit("급함", priority=-5)
+    c = tq.submit("나중", priority=10)
+    d = tq.submit("보통2", priority=0)
+
+    drained = []
+    while not tq._queue.empty():
+        drained.append(tq._queue.get_nowait()[2])
+    assert drained == [b, a, d, c]           # 급함 → 보통(제출순 a,d) → 나중
+    assert tq.get(a)["priority"] == 0
+    assert tq.get(b)["priority"] == -5
+
+
+def test_submit_defaults_priority_zero():
+    import queue as _q
+
+    tq = TaskQueue.__new__(TaskQueue)
+    tq._tasks, tq._order, tq._seq = {}, [], 0
+    tq._lock = threading.Lock()
+    tq._queue = _q.PriorityQueue()
+    tid = tq.submit("기본")
+    assert tq.get(tid)["priority"] == 0
 
 
 def test_evict_old_tasks_drops_oldest_terminal_task_beyond_max():
@@ -279,3 +357,46 @@ def test_depth_reflects_queued_items_not_yet_processed():
         tq.submit("작업3")
         time.sleep(0.05)
         assert tq.depth() >= 1
+
+
+def test_fast_chat_skips_planning_for_simple_question(monkeypatch):
+    """간단한 질문은 planner를 부르지 않고 단일 LLM step으로 바로 실행한다."""
+    import core.task_queue as task_queue
+    monkeypatch.setattr(task_queue, "FAST_CHAT", True)
+    captured = {}
+
+    def fake_execute(steps, **kwargs):
+        captured["steps"] = steps
+        return [{"action": "llm", "status": "ok", "result": "안녕하세요"}]
+
+    with patch("core.task_queue.plan", side_effect=AssertionError("plan을 부르면 안 된다")), \
+         patch("core.task_queue.execute_steps", side_effect=fake_execute), \
+         patch("core.task_queue.memory.save", return_value={"status": "done"}), \
+         patch("core.task_queue.memory.get_context", return_value=""):
+        tq = TaskQueue()
+        task_id = tq.submit("안녕")
+        task = _wait_until_terminal(tq, task_id)
+
+    assert task["status"] == "completed"
+    assert captured["steps"] == [{"action": "llm", "input": "안녕", "depends_on": None}]
+
+
+def test_fast_chat_off_uses_planner_for_simple_question(monkeypatch):
+    """fast-chat을 끄면 간단한 질문도 planner를 거친다(토글 동작 확인)."""
+    import core.task_queue as task_queue
+    monkeypatch.setattr(task_queue, "FAST_CHAT", False)
+    called = {"plan": False}
+
+    def fake_plan(*a, **k):
+        called["plan"] = True
+        return [{"action": "llm", "input": "안녕", "depends_on": None}]
+
+    with patch("core.task_queue.plan", side_effect=fake_plan), \
+         patch("core.task_queue.execute_steps", return_value=[{"action": "llm", "status": "ok"}]), \
+         patch("core.task_queue.memory.save", return_value={"status": "done"}), \
+         patch("core.task_queue.memory.get_context", return_value=""):
+        tq = TaskQueue()
+        task_id = tq.submit("안녕")
+        _wait_until_terminal(tq, task_id)
+
+    assert called["plan"] is True
